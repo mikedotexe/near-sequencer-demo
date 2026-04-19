@@ -8,7 +8,7 @@ A compact, visual recipe book for NEAR's NEP-519 yield/resume primitive.
 Two contracts (`recipes` + canonical `counter`) plus one non-contract
 participant (`bob` for Recipe 4), four recipe method groups (basic /
 timeout / chained / handoff), a scripts pipeline that broadcasts them
-on testnet and captures receipt DAGs, and Manim scenes per recipe.
+on testnet and snapshots receipt DAGs, and Manim scenes per recipe.
 Testnet only. Not a thesis demo.
 
 If you catch yourself writing about "silent value," "dishonest router,"
@@ -88,13 +88,20 @@ Two things worth internalizing before editing recipes code:
    the runtime delivers `PromiseError` to the receipt already in the
    DAG. So every trace event emitted by callback code
    (`recipe_resolved_{ok,err}`, `recipe_dispatched`,
-   `recipe_callback_observed`) appears on a receipt_outcome inside
-   the YIELD tx's `receipts_outcome`, not the resume tx's. Audit and
-   translator both walk all captured tx DAGs rather than assuming a
-   role. The audit enforces this as a machine-checked invariant
-   (`dagPlacement` + `dagInvariantViolations` in each audit artifact);
-   a violation prints a loud `!! DAG-placement invariant violated`
-   line and is recorded so the aggregate can surface it.
+   `recipe_callback_observed`, `handoff_released`, `handoff_refunded`)
+   appears on a receipt_outcome inside the YIELD tx's
+   `receipts_outcome`, not the resume tx's. Audit and translator both
+   walk all snapshotted tx DAGs rather than assuming a role.
+
+   This is the first of three machine-checked invariants — DAG-placement,
+   Budget (NEP-519 200-block timeout empirically holds), Atomicity
+   (Recipe 4's Transfer receipt matches recipient + amount + succeeded).
+   Canonical derivations in `docs/invariants.md`; per-run check sites in
+   `scripts/src/audit.ts:{computeDagPlacement,checkBudget,checkAtomicity}`;
+   per-recipe roll-ups in `scripts/src/aggregate.ts:{computeDagInvariant,
+   computeBudgetInvariant,computeAtomicityInvariant}`; unit tests in
+   `scripts/test/invariants.test.ts`. A violation prints a loud `!!`
+   stderr line from audit and exits non-zero.
 
 2. **`testing_env!` wipes registered YieldIds.** Each mock VM reset
    throws away registered yields, so a unit test cannot drive yield +
@@ -143,15 +150,15 @@ agree on this vocabulary. Change one, change all three.
 ### Scripts pipeline
 
 Per-recipe flows live in `scripts/src/recipes/{basic,timeout,chained,handoff}.ts`
-and share capture scaffolding in `scripts/src/recipes/common.ts`. Each
+and share snapshot scaffolding in `scripts/src/recipes/common.ts`. Each
 flow broadcasts the recipe's txs, writes `run-NN.raw.json`, and
-triggers `captureOnChain(...)` which writes `run-NN.onchain.json`
+triggers `snapshotOnChain(...)` which writes `run-NN.onchain.json`
 (full receipt DAGs + blocks + chunks, no state-series).
 
 `audit.ts` reads both files per run, emits a per-recipe audit artifact,
 and the aggregate + report commands roll those up.
 
-When adding a new metric: derive it from the already-captured
+When adding a new metric: derive it from the already-snapshotted
 `onchain.json` shape rather than new RPC calls. Keeps old runs
 reanalyzable offline.
 
@@ -169,7 +176,7 @@ Any new subcommand that broadcasts a tx must call
 
 `viz/` is a Manim scene package. One scene + one synthetic timeline
 per recipe, plus a Live variant that replays the scene against a
-translator-generated timeline JSON from a real testnet capture:
+translator-generated timeline JSON from a real testnet snapshot:
 
 - `viz/scenes/recipe_basic.py` → `RecipeBasic` / `RecipeBasicLive`
 - `viz/scenes/recipe_timeout.py` → `RecipeTimeout` / `RecipeTimeoutLive`

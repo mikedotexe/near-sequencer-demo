@@ -2,9 +2,37 @@
 
 This repo is a compact, visual recipe book for NEAR's
 [NEP-519 `yield`/`resume`](https://github.com/near/NEPs/blob/master/neps/nep-0519.md)
-primitive. Four self-contained recipes — each with its own minimal
-contract method pair, runnable flow, and Manim-animated scene — answer
-four concrete questions a NEAR dev hits when reaching for yield/resume
+primitive.
+
+## TL;DR — the 30-second take
+
+- **What's here.** Four testnet recipes on one `recipes` contract
+  (basic / timeout / chained / handoff), each a minimal Rust
+  method-pair + a runnable TypeScript flow + a Manim-animated
+  scene driven by real testnet snapshots.
+- **What it proves.** Three machine-checked invariants on every run,
+  visible as a PASS/FAIL header at the top of
+  [`artifacts/testnet/report.md`](artifacts/testnet/report.md):
+  **DAG-placement** (mechanic), **Budget** (NEP-519's 200-block
+  timeout holds empirically), **Atomicity** (Recipe 4 actually moves
+  value). Derivation of each in
+  [`docs/invariants.md`](docs/invariants.md).
+- **Mental model.** The yield tx is the root of a receipt tree;
+  resume and timeout are both data-delivery ops against an already-
+  scheduled callback receipt. That one sentence makes all four
+  recipes cohere — §[Three invariants, machine-checked on every
+  run](#three-invariants-machine-checked-on-every-run) below.
+- **Run it or read it.** `scripts/demo.sh all` reproduces the full
+  pipeline on testnet; alternatively, read the committed
+  `artifacts/testnet/report.md` to verify the claims without
+  executing.
+- **Animate it.** `cd viz && make all-recipes` renders four
+  ~30-second synthetic scenes; the `*Live` variants replay against
+  actual testnet snapshots.
+
+Four self-contained recipes — each with its own minimal contract
+method pair, runnable flow, and Manim-animated scene — answer four
+concrete questions a NEAR dev hits when reaching for yield/resume
 for the first time:
 
 1. **Basic.** How do `Promise::new_yield` and `yield_id.resume` actually
@@ -18,8 +46,8 @@ for the first time:
    never shows up?
 
 Each recipe is end-to-end: a Rust method pair on one shared `recipes`
-contract, a TypeScript flow that broadcasts the txs and captures the
-full receipt DAGs, an audit that parses the captured trace events into
+contract, a TypeScript flow that broadcasts the txs and snapshots the
+full receipt DAGs, an audit that parses the snapshotted trace events into
 a lifecycle summary, and a Manim scene that animates the observable
 moments against a timeline of real block heights.
 
@@ -177,7 +205,7 @@ Observable on testnet: `0.01 NEAR` per handoff. Claim path settles in
 the yield tx's DAG contains the full transfer receipt for whichever
 ending fires.
 
-## The yield tx is the root of a receipt tree
+## Three invariants, machine-checked on every run
 
 The mental model that makes all four recipes coherent:
 **`Promise::new_yield` schedules the callback receipt at yield time.**
@@ -187,20 +215,39 @@ already-scheduled receipt — it doesn't create a new one. The 200-block
 timeout path is the same: when the budget expires, the runtime
 delivers `PromiseError` to the receipt it already has.
 
-Consequence (machine-checked by `scripts/demo.sh audit`):
-**every trace event emitted by callback code — `recipe_resolved_ok`,
-`recipe_resolved_err`, `recipe_dispatched`, `recipe_callback_observed` —
-lives in the YIELD tx's `receipts_outcome[]`**, even when execution
-is triggered by a later resume tx (basic, chained) or a timeout
-(timeout). The resume tx's DAG contains only `recipe_resumed`. The
-audit writes this into each `run-NN.audit.json` as a `dagPlacement`
-map and loud-fails if it ever drifts.
+The audit pipeline empirically checks three invariants on every
+snapshotted run and rolls their PASS/VIOLATED status into
+[`artifacts/testnet/report.md`](artifacts/testnet/report.md)'s
+"Invariants at a glance" header. `scripts/demo.sh audit` exits
+non-zero if any invariant is violated, so CI (and a human running the
+pipeline by hand) learns immediately rather than from eyeballing JSON.
 
-The timeout recipe is the proof artifact. `recipe-timeout/run-01`
-captures a single yield tx — there is no second tx at 200 blocks —
-yet both `recipe_yielded` and `recipe_resolved_err` are present in
-its DAG, at block heights 202 apart. The runtime extended an existing
-receipt's outcome; it did not materialize a fresh one.
+1. **DAG-placement.** Every trace event emitted by callback code —
+   `recipe_resolved_ok`, `recipe_resolved_err`, `recipe_dispatched`,
+   `recipe_callback_observed`, `handoff_released`, `handoff_refunded` —
+   lives in the YIELD tx's `receipts_outcome[]`, even when execution
+   is triggered by a later resume tx (basic, chained, handoff-claim)
+   or a timeout (timeout, handoff-timeout). The resume tx's DAG
+   contains only `recipe_resumed`. Written per run as a `dagPlacement`
+   map + `dagInvariantViolations` list; current observed corpus:
+   40/40 events in expected place across 10 runs.
+2. **Budget.** The observed `yield→callback` block delta for timeout
+   runs must lie in `[200, 205]` — NEP-519's stated 200-block budget
+   plus small slack for chunk-inclusion latency. Checked for both
+   Recipe 2 and Recipe 4's timeout mode. Current corpus: 2/2 inside
+   the window, observed 202 in both cases.
+3. **Atomicity (Recipe 4).** For each handoff run the snapshot must
+   contain a `Transfer` receipt from the recipes contract to the
+   expected recipient (Bob on claim, Alice on timeout) with `deposit`
+   equal to the attached `amountYocto` and an outcome status of
+   `SuccessValue`. Current corpus: 3/3 runs.
+
+The timeout recipe is the cleanest proof artifact.
+`recipe-timeout/run-01` snapshots a single yield tx — there is no
+second tx at 200 blocks — yet both `recipe_yielded` and
+`recipe_resolved_err` are present in its DAG, at block heights 202
+apart. The runtime extended an existing receipt's outcome; it did not
+materialize a fresh one.
 
 ## Running the book end-to-end
 
@@ -224,13 +271,13 @@ audit a `run-NN.audit.json` (parsed lifecycle summary). The final
 `report.md` has a table per recipe linking to every tx on
 [nearblocks.io](https://testnet.nearblocks.io).
 
-To inspect the DAG-placement of trace events for a single captured run
+To inspect the DAG-placement of trace events for a single snapshotted run
 (the reproducibility hook for the "yield tx is the root of the receipt
 tree" framing above):
 
 ```sh
 scripts/demo.sh explain-dag basic 1      # → table: event | found in | expected | block
-scripts/demo.sh explain-dag timeout      # defaults to first captured run
+scripts/demo.sh explain-dag timeout      # defaults to first snapshotted run
 scripts/demo.sh explain-dag chained 2
 ```
 
@@ -280,7 +327,7 @@ parser in `scripts/src/audit.ts`, and the translator in
 
 `viz/` is a Manim scene package driven by hand-authored synthetic
 timelines + translator-generated live timelines from `onchain.json`
-captures. One scene per recipe plus a Live variant for each:
+snapshots. One scene per recipe plus a Live variant for each:
 
 ```sh
 cd viz/
@@ -315,9 +362,20 @@ and re-sync path.
   archival permanence is wasted here.
 - **Automation / triggers / saga templates.** Sibling owns that direction.
 - **Multi-sig.** `near/core-contracts/multisig2` is canonical.
-- **More than four recipes.** Four is enough to teach the mechanic, the
-  timeout, composition with cross-contract calls, and atomic value
-  transfer with safety valve. Adding more risks diluting the focus.
+- **More than four recipes, *for now*.** Four is enough to teach the
+  core mechanic, the timeout, composition with cross-contract calls,
+  and atomic value transfer with safety valve — that's Volume 1. A
+  single Recipe 5 (solver-auction NEAR Intent) is sketched in
+  [`docs/volume-2-intents.md`](docs/volume-2-intents.md): contract
+  method signatures, trace events, expected DAG placements, plus the
+  two new invariants (exactly-one-winner, cascade-fail ordering) a
+  solver-contention shape needs. The viz layer already carries the
+  matching handlers (see [`viz/DESIGN.md`](viz/DESIGN.md) §"Volume 2"
+  and [`viz/common/ATTRIBUTION.md`](viz/common/ATTRIBUTION.md)), so a
+  Volume 2 ship is an additive change, not a refactor. The sketch
+  has a stated deadline — **2026-10-19** — past which the scaffolding
+  gets deleted if the sibling adapter or an external motivation
+  hasn't landed to trigger the work.
 
 ## Voice principle — vocabulary tracks the contract
 
