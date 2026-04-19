@@ -1,0 +1,30 @@
+{
+  "recipe": "handoff",
+  "mode": "claim",
+  "runIndex": 1,
+  "name": "r01-claim-1776575599074",
+  "signer": "mike.testnet",
+  "auditSource": "onchain_json",
+  "recipient": "bob.mike.testnet",
+  "amountYocto": "10000000000000000000000",
+  "yieldTxHash": "F67JHLG8PPZqY5dLmnkJfhbLkU7xxS4AkZm7nNdhciBS",
+  "yieldBlockHeight": 246410921,
+  "resumeTxHash": "9KncDTzhX6ZH5NWUU6Ro8MxhUNkEdWWbYL1iqVr34fc1",
+  "claimSigner": "mike.testnet",
+  "resumeBlockHeight": 246410928,
+  "settleBlockHeight": 246410930,
+  "fundsRecipient": "bob.mike.testnet",
+  "settledOk": true,
+  "blocksFromYieldToResume": 7,
+  "blocksFromYieldToSettle": 9,
+  "explorerUrl": "https://testnet.nearblocks.io/txns/F67JHLG8PPZqY5dLmnkJfhbLkU7xxS4AkZm7nNdhciBS",
+  "interpretation": "claim: 10000000000000000000000 yocto → bob.mike.testnet; yield→resume=7b; yield→settle=9b",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resumed": "resume",
+    "recipe_resolved_ok": "yield",
+    "handoff_offered": "yield",
+    "handoff_released": "yield"
+  },
+  "dagInvariantViolations": []
+}

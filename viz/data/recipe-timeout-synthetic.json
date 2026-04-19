@@ -1,0 +1,43 @@
+{
+  "name": "Recipe 2 \u2014 Timeout: what happens when no one resumes (synthetic)",
+  "comment": "The yielded callback fires even in the absence of a resume, after NEP-519's fixed 200-block budget. The synthetic scene compresses the wait visually by using the block HUD's advancing counter across a long idle. At ~200 blocks past yield, the callback fires with PromiseError; the on_timeout_resumed handler matches on Err and emits recipe_resolved_err. Satellite settles with status=\"timeout\" (red shockwave + ember).",
+  "block_origin": 1000,
+  "yield_budget_blocks": 200,
+  "actors": {
+    "user": {
+      "role": "caller", "label": "mike.testnet", "kind": "person",
+      "visible_at_start": false
+    },
+    "recipes": {
+      "role": "contract", "display_name": "recipes",
+      "account_id": "recipes.mike.testnet",
+      "kind": "liquid", "visible_at_start": false,
+      "radius": 0.62, "display_font_size": 13, "caption_font_size": 10
+    }
+  },
+  "events": [
+    { "block": 1000, "type": "narrative", "title": "Recipe 2 \u2014 timeout",
+      "body": "what happens when no one resumes? NEP-519 guarantees the callback still fires \u2014 but with PromiseError in place of the resume payload. The 200-block budget is fixed." },
+    { "block": 1002, "type": "actor_appear", "actor": "user" },
+    { "block": 1002, "type": "actor_appear", "actor": "recipes" },
+
+    { "block": 1004, "type": "narrative", "title": "tx1 \u2014 recipe_timeout_yield(name)",
+      "body": "same shape as basic: Promise::new_yield, store YieldId. But there is no recipe_timeout_resume method \u2014 nothing will ever resume this yield." },
+
+    { "block": 1006, "type": "tx_included", "actor": "user", "target": "recipes",
+      "method": "recipe_timeout_yield(\"waiting\")" },
+    { "block": 1008, "type": "yield_eject", "actor": "recipes",
+      "target": "recipes", "method": "on_timeout_resumed", "step_id": "t1" },
+
+    { "block": 1060, "type": "narrative", "title": "waiting \u2014 no resume arrives",
+      "body": "blocks pass. the yielded callback is still registered, prepaid gas is still locked. NEP-519's 200-block timeout is ticking." },
+
+    { "block": 1206, "type": "narrative", "title": "budget exhausted",
+      "body": "at yield + 200 blocks, the runtime delivers PromiseError to the callback receipt already waiting in the yield tx's DAG. It executes with #[callback_result] = Err(PromiseError)." },
+
+    { "block": 1208, "type": "settle", "actor": "recipes", "step_id": "t1", "status": "timeout" },
+
+    { "block": 1212, "type": "narrative", "title": "resolved_err",
+      "body": "on_timeout_resumed's Err arm ran; trace event recipe_resolved_err emitted. The callback fired exactly once, as promised." }
+  ]
+}

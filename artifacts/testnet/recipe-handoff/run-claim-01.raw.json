@@ -1,0 +1,15 @@
+{
+  "recipe": "handoff",
+  "runIndex": 1,
+  "mode": "claim",
+  "name": "r01-claim-1776575599074",
+  "signer": "mike.testnet",
+  "recipient": "bob.mike.testnet",
+  "amountYocto": "10000000000000000000000",
+  "started": "2026-04-19T05:13:19.074Z",
+  "finished": "2026-04-19T05:13:23.547Z",
+  "yieldTxHash": "F67JHLG8PPZqY5dLmnkJfhbLkU7xxS4AkZm7nNdhciBS",
+  "yieldBlockHeight": 246410921,
+  "resumeTxHash": "9KncDTzhX6ZH5NWUU6Ro8MxhUNkEdWWbYL1iqVr34fc1",
+  "claimSigner": "mike.testnet"
+}

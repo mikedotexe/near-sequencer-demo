@@ -1,0 +1,123 @@
+{
+  "recipe": "handoff",
+  "runCount": 3,
+  "claimCount": 2,
+  "timeoutCount": 1,
+  "settledOkCount": 2,
+  "amountYocto": "10000000000000000000000",
+  "blocksFromYieldToResume": {
+    "min": 7,
+    "max": 8,
+    "median": 7.5,
+    "count": 2
+  },
+  "blocksFromYieldToSettle": {
+    "min": 9,
+    "max": 202,
+    "median": 10,
+    "count": 3
+  },
+  "claimYieldToSettle": {
+    "min": 9,
+    "max": 10,
+    "median": 9.5,
+    "count": 2
+  },
+  "timeoutYieldToSettle": {
+    "min": 202,
+    "max": 202,
+    "median": 202,
+    "count": 1
+  },
+  "runs": [
+    {
+      "recipe": "handoff",
+      "mode": "claim",
+      "runIndex": 1,
+      "name": "r01-claim-1776575599074",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "recipient": "bob.mike.testnet",
+      "amountYocto": "10000000000000000000000",
+      "yieldTxHash": "F67JHLG8PPZqY5dLmnkJfhbLkU7xxS4AkZm7nNdhciBS",
+      "yieldBlockHeight": 246410921,
+      "resumeTxHash": "9KncDTzhX6ZH5NWUU6Ro8MxhUNkEdWWbYL1iqVr34fc1",
+      "claimSigner": "mike.testnet",
+      "resumeBlockHeight": 246410928,
+      "settleBlockHeight": 246410930,
+      "fundsRecipient": "bob.mike.testnet",
+      "settledOk": true,
+      "blocksFromYieldToResume": 7,
+      "blocksFromYieldToSettle": 9,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/F67JHLG8PPZqY5dLmnkJfhbLkU7xxS4AkZm7nNdhciBS",
+      "interpretation": "claim: 10000000000000000000000 yocto → bob.mike.testnet; yield→resume=7b; yield→settle=9b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_resolved_ok": "yield",
+        "handoff_offered": "yield",
+        "handoff_released": "yield"
+      },
+      "dagInvariantViolations": []
+    },
+    {
+      "recipe": "handoff",
+      "mode": "claim",
+      "runIndex": 2,
+      "name": "r02-claim-1776575621289",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "recipient": "bob.mike.testnet",
+      "amountYocto": "10000000000000000000000",
+      "yieldTxHash": "6K11oqRYzdoCvNLySaKeykFiAJiAB9bSVKgMvhmPRrdD",
+      "yieldBlockHeight": 246410964,
+      "resumeTxHash": "2NqbUF2oMHFE5qoi3zDTjNYCsBszvU4iyBWpYmQBSg4F",
+      "claimSigner": "mike.testnet",
+      "resumeBlockHeight": 246410972,
+      "settleBlockHeight": 246410974,
+      "fundsRecipient": "bob.mike.testnet",
+      "settledOk": true,
+      "blocksFromYieldToResume": 8,
+      "blocksFromYieldToSettle": 10,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/6K11oqRYzdoCvNLySaKeykFiAJiAB9bSVKgMvhmPRrdD",
+      "interpretation": "claim: 10000000000000000000000 yocto → bob.mike.testnet; yield→resume=8b; yield→settle=10b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_resolved_ok": "yield",
+        "handoff_offered": "yield",
+        "handoff_released": "yield"
+      },
+      "dagInvariantViolations": []
+    },
+    {
+      "recipe": "handoff",
+      "mode": "timeout",
+      "runIndex": 1,
+      "name": "r01-timeout-1776575650185",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "recipient": "bob.mike.testnet",
+      "amountYocto": "10000000000000000000000",
+      "yieldTxHash": "Hds1Rz9Untn3KfhUnWmyqzkgy7sFontUZLJcBVJqTkkF",
+      "yieldBlockHeight": 246411018,
+      "resumeTxHash": null,
+      "claimSigner": null,
+      "resumeBlockHeight": null,
+      "settleBlockHeight": 246411220,
+      "fundsRecipient": "mike.testnet",
+      "settledOk": false,
+      "blocksFromYieldToResume": null,
+      "blocksFromYieldToSettle": 202,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/Hds1Rz9Untn3KfhUnWmyqzkgy7sFontUZLJcBVJqTkkF",
+      "interpretation": "timeout: refunded 10000000000000000000000 yocto → mike.testnet; yield→settle=202b (NEP-519 budget = 200)",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resolved_err": "yield",
+        "handoff_offered": "yield",
+        "handoff_refunded": "yield"
+      },
+      "dagInvariantViolations": []
+    }
+  ]
+}

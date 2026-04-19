@@ -1,0 +1,23 @@
+target/
+scripts/node_modules/
+scripts/dist/
+scripts/package-lock.json
+.DS_Store
+
+# artifacts/ partitions per-network captures. testnet is committed as
+# durable proof of the recipe runs (full receipt DAGs + blocks + chunks
+# so offline reanalysis doesn't need archival RPC). mainnet is not used
+# by this repo and stays ignored.
+artifacts/mainnet/
+
+# viz/ animation layer — rendered outputs and Python virtual env.
+# Source (scenes/, common/, data/, scripts/, DESIGN.md, README.md,
+# Makefile, pyproject.toml, requirements.txt) is committed.
+viz/media/
+viz/.venv/
+viz/__pycache__/
+viz/**/__pycache__/
+
+# Local env (copied from .env.example). Contains FASTNEAR_API_KEY and
+# NEAR_NETWORK among other overrides — see .env.example for the full list.
+.env

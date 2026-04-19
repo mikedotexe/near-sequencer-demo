@@ -1,0 +1,120 @@
+{
+  "recipe": "chained",
+  "runCount": 3,
+  "resolvedOkCount": 3,
+  "blocksFromYieldToResume": {
+    "min": 4,
+    "max": 5,
+    "median": 4,
+    "count": 3
+  },
+  "blocksFromResumeToDispatch": {
+    "min": 2,
+    "max": 2,
+    "median": 2,
+    "count": 3
+  },
+  "blocksFromDispatchToCallback": {
+    "min": 2,
+    "max": 2,
+    "median": 2,
+    "count": 3
+  },
+  "observedValues": [
+    1,
+    0,
+    1
+  ],
+  "runs": [
+    {
+      "recipe": "chained",
+      "runIndex": 1,
+      "name": "r01-1776572473829",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "counterId": "recipes-counter.mike.testnet",
+      "delta": 1,
+      "yieldTxHash": "8nPnLRn3iteo7tmjAKQuwApQ5j6yEdGGQiiC1oMfDfxs",
+      "yieldBlockHeight": 246405430,
+      "resumeTxHash": "CeFZJHwrnxr6bbA1wsMQ5gTG6G2BvTXietvxtzCy2uwf",
+      "resumeBlockHeight": 246405435,
+      "dispatchBlockHeight": 246405437,
+      "callbackBlockHeight": 246405439,
+      "observedValue": 1,
+      "resolvedOk": true,
+      "blocksFromYieldToResume": 5,
+      "blocksFromResumeToDispatch": 2,
+      "blocksFromDispatchToCallback": 2,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/CeFZJHwrnxr6bbA1wsMQ5gTG6G2BvTXietvxtzCy2uwf",
+      "interpretation": "dispatched counter.increment; observed=1; yield→resume=5b; resume→dispatch=2b; dispatch→callback=2b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_dispatched": "yield",
+        "recipe_callback_observed": "yield",
+        "recipe_resolved_ok": "yield"
+      },
+      "dagInvariantViolations": []
+    },
+    {
+      "recipe": "chained",
+      "runIndex": 2,
+      "name": "r02-1776572502963",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "counterId": "recipes-counter.mike.testnet",
+      "delta": -1,
+      "yieldTxHash": "7mDmoKSZTKU3HwfFUvJTvy2vYdTZvoPq1ajgWvbonaDP",
+      "yieldBlockHeight": 246405481,
+      "resumeTxHash": "7wn61dnpzRPrXM8ZBdZJJ3BxGWJQPsiXokzeEhWb5qKq",
+      "resumeBlockHeight": 246405485,
+      "dispatchBlockHeight": 246405487,
+      "callbackBlockHeight": 246405489,
+      "observedValue": 0,
+      "resolvedOk": true,
+      "blocksFromYieldToResume": 4,
+      "blocksFromResumeToDispatch": 2,
+      "blocksFromDispatchToCallback": 2,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/7wn61dnpzRPrXM8ZBdZJJ3BxGWJQPsiXokzeEhWb5qKq",
+      "interpretation": "dispatched counter.decrement; observed=0; yield→resume=4b; resume→dispatch=2b; dispatch→callback=2b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_dispatched": "yield",
+        "recipe_callback_observed": "yield",
+        "recipe_resolved_ok": "yield"
+      },
+      "dagInvariantViolations": []
+    },
+    {
+      "recipe": "chained",
+      "runIndex": 3,
+      "name": "r03-1776572532438",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "counterId": "recipes-counter.mike.testnet",
+      "delta": 1,
+      "yieldTxHash": "Hf7qnFSJPgjUcE6orFhdtSR18wJAzRNsdR7jeu3hrMM2",
+      "yieldBlockHeight": 246405530,
+      "resumeTxHash": "BPCKd5MyaFAHsyLBaSwd9pz1QgbZBYjpHV3Z2oUQZXHA",
+      "resumeBlockHeight": 246405534,
+      "dispatchBlockHeight": 246405536,
+      "callbackBlockHeight": 246405538,
+      "observedValue": 1,
+      "resolvedOk": true,
+      "blocksFromYieldToResume": 4,
+      "blocksFromResumeToDispatch": 2,
+      "blocksFromDispatchToCallback": 2,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/BPCKd5MyaFAHsyLBaSwd9pz1QgbZBYjpHV3Z2oUQZXHA",
+      "interpretation": "dispatched counter.increment; observed=1; yield→resume=4b; resume→dispatch=2b; dispatch→callback=2b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_dispatched": "yield",
+        "recipe_callback_observed": "yield",
+        "recipe_resolved_ok": "yield"
+      },
+      "dagInvariantViolations": []
+    }
+  ]
+}

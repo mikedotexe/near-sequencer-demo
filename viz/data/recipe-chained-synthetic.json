@@ -1,0 +1,55 @@
+{
+  "name": "Recipe 3 \u2014 Chained: resume triggers a downstream call with callback (synthetic)",
+  "comment": "The canonical cross-contract pattern, gated on a yielded resume. tx1 yields; tx2 resumes with a delta. On resume, on_chained_resumed dispatches counter.increment (or decrement) and chains .then(on_counter_observed). The counter returns its new value via #[callback_result]; the recipe's receipt only resolves after that truthful return is observed. This is the pattern the old \"truthful adapter\" demonstrated, generalized.",
+  "block_origin": 1000,
+  "yield_budget_blocks": 200,
+  "actors": {
+    "user": {
+      "role": "caller", "label": "mike.testnet", "kind": "person",
+      "visible_at_start": false
+    },
+    "recipes": {
+      "role": "contract", "display_name": "recipes",
+      "account_id": "recipes.mike.testnet",
+      "kind": "liquid", "visible_at_start": false,
+      "radius": 0.62, "display_font_size": 13, "caption_font_size": 10
+    },
+    "counter": {
+      "role": "contract", "display_name": "counter",
+      "account_id": "recipes-counter.mike.testnet",
+      "kind": "liquid", "visible_at_start": false,
+      "radius": 0.52, "display_font_size": 14, "caption_font_size": 10
+    }
+  },
+  "events": [
+    { "block": 1000, "type": "narrative", "title": "Recipe 3 \u2014 chained",
+      "body": "resume triggers a downstream call, chained via .then(callback). The recipe's receipt only resolves after it has observed the target's truthful return value." },
+    { "block": 1002, "type": "actor_appear", "actor": "user" },
+    { "block": 1002, "type": "actor_appear", "actor": "recipes" },
+    { "block": 1003, "type": "actor_appear", "actor": "counter" },
+
+    { "block": 1005, "type": "narrative", "title": "tx1 \u2014 recipe_chained_yield(name, counter_id)",
+      "body": "yields a callback on_chained_resumed, stored as \"chained:<name>\". Callback args carry the counter account so the handler can dispatch without looking it up." },
+
+    { "block": 1007, "type": "tx_included", "actor": "user", "target": "recipes",
+      "method": "recipe_chained_yield(\"go\", counter)" },
+    { "block": 1009, "type": "yield_eject", "actor": "recipes",
+      "target": "recipes", "method": "on_chained_resumed", "step_id": "c1" },
+
+    { "block": 1013, "type": "narrative", "title": "tx2 \u2014 recipe_chained_resume(name, delta=+1)",
+      "body": "resumes with ChainedSignal{delta:1}. on_chained_resumed dispatches counter.increment() and chains .then(on_counter_observed). The recipe's own receipt doesn't resolve yet \u2014 it's waiting on the counter's truthful return." },
+
+    { "block": 1015, "type": "tx_included", "actor": "user", "target": "recipes",
+      "method": "recipe_chained_resume(\"go\", 1)" },
+    { "block": 1017, "type": "resume_data",   "actor": "recipes", "step_id": "c1" },
+    { "block": 1017, "type": "resume_action", "actor": "recipes", "step_id": "c1" },
+    { "block": 1018, "type": "downstream_call",  "actor": "recipes", "target": "counter",
+      "method": "increment", "step_id": "c1" },
+    { "block": 1020, "type": "downstream_return", "actor": "counter", "target": "recipes",
+      "status": "ok", "step_id": "c1" },
+    { "block": 1022, "type": "settle", "actor": "recipes", "step_id": "c1", "status": "ok" },
+
+    { "block": 1026, "type": "narrative", "title": "observed = 1",
+      "body": "on_counter_observed read counter's new value via #[callback_result] and emitted recipe_callback_observed with value=1 before recipe_resolved_ok." }
+  ]
+}

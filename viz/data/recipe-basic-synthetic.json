@@ -1,0 +1,44 @@
+{
+  "name": "Recipe 1 \u2014 Basic cross-tx yield + resume (synthetic)",
+  "comment": "The simplest NEP-519 mechanic. tx1 calls recipe_basic_yield and persists the YieldId; tx2 calls recipe_basic_resume with a payload; the yielded callback fires with the payload and resolves ok. One actor (recipes contract) + one caller. Step id \"b1\" names the single yielded promise; no prefix collision with timeout/chained because each scene runs in its own TimelinePlayer instance.",
+  "block_origin": 1000,
+  "yield_budget_blocks": 200,
+  "actors": {
+    "user": {
+      "role": "caller", "label": "mike.testnet", "kind": "person",
+      "visible_at_start": false
+    },
+    "recipes": {
+      "role": "contract", "display_name": "recipes",
+      "account_id": "recipes.mike.testnet",
+      "kind": "liquid", "visible_at_start": false,
+      "radius": 0.62, "display_font_size": 13, "caption_font_size": 10
+    }
+  },
+  "events": [
+    { "block": 1000, "type": "narrative", "title": "Recipe 1 \u2014 basic cross-tx yield + resume",
+      "body": "the simplest NEP-519 mechanic. tx1 yields a promise; tx2 resumes it with a payload; the callback fires and resolves ok." },
+    { "block": 1002, "type": "actor_appear", "actor": "user" },
+    { "block": 1002, "type": "actor_appear", "actor": "recipes" },
+
+    { "block": 1004, "type": "narrative", "title": "tx1 \u2014 recipe_basic_yield(name)",
+      "body": "the contract calls Promise::new_yield(\"on_basic_resumed\"), stores the YieldId under \"basic:<name>\" in its state, and returns. No resume yet \u2014 the yielded callback is scheduled and waiting." },
+
+    { "block": 1006, "type": "tx_included", "actor": "user", "target": "recipes",
+      "method": "recipe_basic_yield(\"hello\")" },
+    { "block": 1008, "type": "yield_eject", "actor": "recipes",
+      "target": "recipes", "method": "on_basic_resumed", "step_id": "b1" },
+
+    { "block": 1012, "type": "narrative", "title": "tx2 \u2014 recipe_basic_resume(name, payload)",
+      "body": "the resume looks up the YieldId, calls yield_id.resume(BasicSignal{payload}). The already-scheduled callback receipt fires with the payload as its callback-result." },
+
+    { "block": 1014, "type": "tx_included", "actor": "user", "target": "recipes",
+      "method": "recipe_basic_resume(\"hello\",\"world\")" },
+    { "block": 1016, "type": "resume_data",   "actor": "recipes", "step_id": "b1" },
+    { "block": 1016, "type": "resume_action", "actor": "recipes", "step_id": "b1" },
+    { "block": 1018, "type": "settle",        "actor": "recipes", "step_id": "b1", "status": "ok" },
+
+    { "block": 1022, "type": "narrative", "title": "resolved",
+      "body": "callback fired exactly once; trace event recipe_resolved_ok carries the resumed payload." }
+  ]
+}

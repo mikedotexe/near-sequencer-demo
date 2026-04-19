@@ -1,0 +1,49 @@
+{
+  "name": "Recipe 4 \u2014 Atomic handoff (claim, synthetic)",
+  "comment": "Alice yields recipe_handoff_yield with 0.01 NEAR attached, nominating Bob as recipient. The contract holds the deposit and schedules a callback (from=alice, to=bob, amount=0.01 NEAR). A resume tx fires recipe_handoff_resume (permissionless — anyone can pull the trigger, and the funds still go to the stored `to`); the callback fires (Ok arm) and transfers the funds to Bob via Promise::new(to).transfer(amount). The single receipt scheduled at yield time carried the transfer outcome all along \u2014 resume just delivered the signal to unblock it. No escrow table, no refund method, no polling.",
+  "block_origin": 1000,
+  "yield_budget_blocks": 200,
+  "actors": {
+    "alice": {
+      "role": "caller", "label": "alice (mike.testnet)", "kind": "person",
+      "visible_at_start": false
+    },
+    "bob": {
+      "role": "caller", "label": "bob (bob.mike.testnet)", "kind": "person",
+      "visible_at_start": false
+    },
+    "recipes": {
+      "role": "contract", "display_name": "recipes",
+      "account_id": "recipes.mike.testnet",
+      "kind": "liquid", "visible_at_start": false,
+      "radius": 0.62, "display_font_size": 13, "caption_font_size": 10
+    }
+  },
+  "events": [
+    { "block": 1000, "type": "narrative", "title": "Recipe 4 \u2014 atomic handoff",
+      "body": "alice attaches 0.01 NEAR to a yield nominating bob. the contract holds the deposit and schedules a callback. on bob's resume, the callback transfers the funds to bob atomically. one receipt, two possible endings." },
+    { "block": 1002, "type": "actor_appear", "actor": "alice" },
+    { "block": 1002, "type": "actor_appear", "actor": "recipes" },
+    { "block": 1002, "type": "actor_appear", "actor": "bob" },
+
+    { "block": 1004, "type": "narrative", "title": "tx1 \u2014 alice yields with 0.01 NEAR attached",
+      "body": "recipe_handoff_yield(name, to=bob). the contract receives the deposit and calls Promise::new_yield(\"on_handoff_resumed\", {from, to, amount}). the callback receipt is now scheduled \u2014 waiting for input." },
+
+    { "block": 1006, "type": "tx_included", "actor": "alice", "target": "recipes",
+      "method": "recipe_handoff_yield(\"gift\", to=bob)" },
+    { "block": 1008, "type": "yield_eject", "actor": "recipes",
+      "target": "recipes", "method": "on_handoff_resumed", "step_id": "h1" },
+
+    { "block": 1012, "type": "narrative", "title": "tx2 \u2014 resume triggers transfer",
+      "body": "alice signs recipe_handoff_resume(name). the waiting callback's Ok arm runs Promise::new(bob).transfer(amount) \u2014 bob is the nominated recipient stored at yield time, so the funds go to him regardless of who pulled the trigger." },
+
+    { "block": 1014, "type": "tx_included", "actor": "alice", "target": "recipes",
+      "method": "recipe_handoff_resume(\"gift\")" },
+    { "block": 1016, "type": "resume_data",   "actor": "recipes", "step_id": "h1" },
+    { "block": 1016, "type": "resume_action", "actor": "recipes", "step_id": "h1" },
+    { "block": 1018, "type": "settle",        "actor": "recipes", "step_id": "h1", "status": "ok" },
+
+    { "block": 1022, "type": "narrative", "title": "resolved \u2014 0.01 NEAR delivered to bob",
+      "body": "trace events handoff_released and recipe_resolved_ok emitted. the transfer receipt was part of the callback's outcome, all inside the yield tx's DAG. bob's balance increased; alice's decreased. no escrow table was ever written." }
+  ]
+}

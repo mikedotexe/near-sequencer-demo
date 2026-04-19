@@ -1,0 +1,29 @@
+{
+  "recipe": "handoff",
+  "mode": "timeout",
+  "runIndex": 1,
+  "name": "r01-timeout-1776575650185",
+  "signer": "mike.testnet",
+  "auditSource": "onchain_json",
+  "recipient": "bob.mike.testnet",
+  "amountYocto": "10000000000000000000000",
+  "yieldTxHash": "Hds1Rz9Untn3KfhUnWmyqzkgy7sFontUZLJcBVJqTkkF",
+  "yieldBlockHeight": 246411018,
+  "resumeTxHash": null,
+  "claimSigner": null,
+  "resumeBlockHeight": null,
+  "settleBlockHeight": 246411220,
+  "fundsRecipient": "mike.testnet",
+  "settledOk": false,
+  "blocksFromYieldToResume": null,
+  "blocksFromYieldToSettle": 202,
+  "explorerUrl": "https://testnet.nearblocks.io/txns/Hds1Rz9Untn3KfhUnWmyqzkgy7sFontUZLJcBVJqTkkF",
+  "interpretation": "timeout: refunded 10000000000000000000000 yocto → mike.testnet; yield→settle=202b (NEP-519 budget = 200)",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resolved_err": "yield",
+    "handoff_offered": "yield",
+    "handoff_refunded": "yield"
+  },
+  "dagInvariantViolations": []
+}

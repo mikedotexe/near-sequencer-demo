@@ -1,0 +1,91 @@
+{
+  "recipe": "basic",
+  "runCount": 3,
+  "resolvedOkCount": 3,
+  "blocksFromYieldToResume": {
+    "min": 4,
+    "max": 4,
+    "median": 4,
+    "count": 3
+  },
+  "blocksFromResumeToCallback": {
+    "min": 2,
+    "max": 2,
+    "median": 2,
+    "count": 3
+  },
+  "runs": [
+    {
+      "recipe": "basic",
+      "runIndex": 1,
+      "name": "r01-1776572402162",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "yieldTxHash": "HpdDq1MkuQVRrqFHi7hc8xyCKhuLss1KMDnaxP6Lbmb9",
+      "yieldBlockHeight": 246405312,
+      "resumeTxHash": "GnXxby6XuKnEmyKQMeuU181zGx635puLkkG9KmEc3wzH",
+      "resumeBlockHeight": 246405316,
+      "callbackBlockHeight": 246405318,
+      "resolvedOk": true,
+      "resolvedPayload": "hello-1",
+      "blocksFromYieldToResume": 4,
+      "blocksFromResumeToCallback": 2,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/GnXxby6XuKnEmyKQMeuU181zGx635puLkkG9KmEc3wzH",
+      "interpretation": "resolved_ok with payload=\"hello-1\"; yield→resume=4b; resume→callback=2b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_resolved_ok": "yield"
+      },
+      "dagInvariantViolations": []
+    },
+    {
+      "recipe": "basic",
+      "runIndex": 2,
+      "name": "r02-1776572424930",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "yieldTxHash": "8XQC48gj9zgBucMz5GgpbbZALBy4TfBm6nysYCeqS1q2",
+      "yieldBlockHeight": 246405350,
+      "resumeTxHash": "J4afSRSCvrHJRqKozjP8DQB8St5aSWPJ4qB7unXkCv6V",
+      "resumeBlockHeight": 246405354,
+      "callbackBlockHeight": 246405356,
+      "resolvedOk": true,
+      "resolvedPayload": "hello-2",
+      "blocksFromYieldToResume": 4,
+      "blocksFromResumeToCallback": 2,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/J4afSRSCvrHJRqKozjP8DQB8St5aSWPJ4qB7unXkCv6V",
+      "interpretation": "resolved_ok with payload=\"hello-2\"; yield→resume=4b; resume→callback=2b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_resolved_ok": "yield"
+      },
+      "dagInvariantViolations": []
+    },
+    {
+      "recipe": "basic",
+      "runIndex": 3,
+      "name": "r03-1776572448105",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "yieldTxHash": "7kpBo1zmcMEYoWLCcTW1fy9yUtS2ZNtzKXoB7kEZsRJF",
+      "yieldBlockHeight": 246405389,
+      "resumeTxHash": "8URtjY1SS4EZY7Rz18qLcmNpxzUBY4ZQrJ7Q1LDn7UqZ",
+      "resumeBlockHeight": 246405393,
+      "callbackBlockHeight": 246405395,
+      "resolvedOk": true,
+      "resolvedPayload": "hello-3",
+      "blocksFromYieldToResume": 4,
+      "blocksFromResumeToCallback": 2,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/8URtjY1SS4EZY7Rz18qLcmNpxzUBY4ZQrJ7Q1LDn7UqZ",
+      "interpretation": "resolved_ok with payload=\"hello-3\"; yield→resume=4b; resume→callback=2b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_resolved_ok": "yield"
+      },
+      "dagInvariantViolations": []
+    }
+  ]
+}

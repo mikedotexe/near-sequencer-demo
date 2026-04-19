@@ -1,0 +1,11 @@
+{
+  "recipe": "basic",
+  "runIndex": 2,
+  "name": "r02-1776572424930",
+  "signer": "mike.testnet",
+  "started": "2026-04-19T04:20:24.930Z",
+  "finished": "2026-04-19T04:20:27.924Z",
+  "yieldTxHash": "8XQC48gj9zgBucMz5GgpbbZALBy4TfBm6nysYCeqS1q2",
+  "resumeTxHash": "J4afSRSCvrHJRqKozjP8DQB8St5aSWPJ4qB7unXkCv6V",
+  "resumePayload": "hello-2"
+}

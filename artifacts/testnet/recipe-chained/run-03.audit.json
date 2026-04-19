@@ -1,0 +1,30 @@
+{
+  "recipe": "chained",
+  "runIndex": 3,
+  "name": "r03-1776572532438",
+  "signer": "mike.testnet",
+  "auditSource": "onchain_json",
+  "counterId": "recipes-counter.mike.testnet",
+  "delta": 1,
+  "yieldTxHash": "Hf7qnFSJPgjUcE6orFhdtSR18wJAzRNsdR7jeu3hrMM2",
+  "yieldBlockHeight": 246405530,
+  "resumeTxHash": "BPCKd5MyaFAHsyLBaSwd9pz1QgbZBYjpHV3Z2oUQZXHA",
+  "resumeBlockHeight": 246405534,
+  "dispatchBlockHeight": 246405536,
+  "callbackBlockHeight": 246405538,
+  "observedValue": 1,
+  "resolvedOk": true,
+  "blocksFromYieldToResume": 4,
+  "blocksFromResumeToDispatch": 2,
+  "blocksFromDispatchToCallback": 2,
+  "explorerUrl": "https://testnet.nearblocks.io/txns/BPCKd5MyaFAHsyLBaSwd9pz1QgbZBYjpHV3Z2oUQZXHA",
+  "interpretation": "dispatched counter.increment; observed=1; yield→resume=4b; resume→dispatch=2b; dispatch→callback=2b",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resumed": "resume",
+    "recipe_dispatched": "yield",
+    "recipe_callback_observed": "yield",
+    "recipe_resolved_ok": "yield"
+  },
+  "dagInvariantViolations": []
+}

@@ -1,0 +1,24 @@
+{
+  "recipe": "basic",
+  "runIndex": 3,
+  "name": "r03-1776572448105",
+  "signer": "mike.testnet",
+  "auditSource": "onchain_json",
+  "yieldTxHash": "7kpBo1zmcMEYoWLCcTW1fy9yUtS2ZNtzKXoB7kEZsRJF",
+  "yieldBlockHeight": 246405389,
+  "resumeTxHash": "8URtjY1SS4EZY7Rz18qLcmNpxzUBY4ZQrJ7Q1LDn7UqZ",
+  "resumeBlockHeight": 246405393,
+  "callbackBlockHeight": 246405395,
+  "resolvedOk": true,
+  "resolvedPayload": "hello-3",
+  "blocksFromYieldToResume": 4,
+  "blocksFromResumeToCallback": 2,
+  "explorerUrl": "https://testnet.nearblocks.io/txns/8URtjY1SS4EZY7Rz18qLcmNpxzUBY4ZQrJ7Q1LDn7UqZ",
+  "interpretation": "resolved_ok with payload=\"hello-3\"; yield→resume=4b; resume→callback=2b",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resumed": "resume",
+    "recipe_resolved_ok": "yield"
+  },
+  "dagInvariantViolations": []
+}

@@ -1,0 +1,32 @@
+{
+  "recipe": "timeout",
+  "runCount": 1,
+  "timeoutFiredCount": 1,
+  "blocksFromYieldToCallback": {
+    "min": 202,
+    "max": 202,
+    "median": 202,
+    "count": 1
+  },
+  "runs": [
+    {
+      "recipe": "timeout",
+      "runIndex": 1,
+      "name": "r01-1776572920532",
+      "signer": "mike.testnet",
+      "auditSource": "onchain_json",
+      "yieldTxHash": "6z7USAzwMTpHT49QwmkzfT1uktiQ3APLtpSJCcNHjXbp",
+      "yieldBlockHeight": 246406204,
+      "callbackBlockHeight": 246406406,
+      "timeoutFired": true,
+      "blocksFromYieldToCallback": 202,
+      "explorerUrl": "https://testnet.nearblocks.io/txns/6z7USAzwMTpHT49QwmkzfT1uktiQ3APLtpSJCcNHjXbp",
+      "interpretation": "timeout fired after 202 blocks (NEP-519 budget = 200)",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resolved_err": "yield"
+      },
+      "dagInvariantViolations": []
+    }
+  ]
+}

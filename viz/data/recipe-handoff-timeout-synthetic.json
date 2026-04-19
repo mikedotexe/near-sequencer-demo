@@ -1,0 +1,48 @@
+{
+  "name": "Recipe 4 \u2014 Atomic handoff (timeout, synthetic)",
+  "comment": "Alice yields with bob as the nominated recipient but bob never signs recipe_handoff_resume. After the 200-block NEP-519 budget elapses, the same callback receipt fires \u2014 this time with Err(PromiseError) \u2014 and its Err arm runs Promise::new(alice).transfer(amount). Funds come home to alice. The receipt was always going to resolve within 200 blocks; bob's silence just routed it to the Err arm.",
+  "block_origin": 1000,
+  "yield_budget_blocks": 200,
+  "actors": {
+    "alice": {
+      "role": "caller", "label": "alice (mike.testnet)", "kind": "person",
+      "visible_at_start": false
+    },
+    "bob": {
+      "role": "caller", "label": "bob (bob.mike.testnet)", "kind": "person",
+      "visible_at_start": false
+    },
+    "recipes": {
+      "role": "contract", "display_name": "recipes",
+      "account_id": "recipes.mike.testnet",
+      "kind": "liquid", "visible_at_start": false,
+      "radius": 0.62, "display_font_size": 13, "caption_font_size": 10
+    }
+  },
+  "events": [
+    { "block": 1000, "type": "narrative", "title": "Recipe 4 \u2014 timeout branch",
+      "body": "same contract as the claim scene, different ending. alice yields with bob nominated. bob never signs anything. the 200-block budget ticks down. the callback fires anyway \u2014 this time with PromiseError \u2014 and refunds alice." },
+    { "block": 1002, "type": "actor_appear", "actor": "alice" },
+    { "block": 1002, "type": "actor_appear", "actor": "recipes" },
+    { "block": 1002, "type": "actor_appear", "actor": "bob" },
+
+    { "block": 1004, "type": "narrative", "title": "tx1 \u2014 alice yields with 0.01 NEAR attached",
+      "body": "recipe_handoff_yield(name, to=bob). same as the claim scene: deposit received, callback scheduled, waiting." },
+
+    { "block": 1006, "type": "tx_included", "actor": "alice", "target": "recipes",
+      "method": "recipe_handoff_yield(\"pending\", to=bob)" },
+    { "block": 1008, "type": "yield_eject", "actor": "recipes",
+      "target": "recipes", "method": "on_handoff_resumed", "step_id": "h1" },
+
+    { "block": 1060, "type": "narrative", "title": "waiting \u2014 bob never claims",
+      "body": "blocks pass. bob is on stage but signs nothing. the callback receipt is still scheduled, prepaid gas still locked, NEP-519's 200-block budget ticking." },
+
+    { "block": 1206, "type": "narrative", "title": "budget exhausted \u2014 refund",
+      "body": "at yield + 200 blocks, the runtime delivers PromiseError to the already-scheduled callback. its Err arm runs Promise::new(alice).transfer(amount). the funds go home." },
+
+    { "block": 1208, "type": "settle", "actor": "recipes", "step_id": "h1", "status": "timeout" },
+
+    { "block": 1212, "type": "narrative", "title": "refunded",
+      "body": "trace events handoff_refunded and recipe_resolved_err emitted; 0.01 NEAR landed back on alice. the same receipt that would have paid bob on a claim paid alice on the timeout. one primitive, two endings." }
+  ]
+}

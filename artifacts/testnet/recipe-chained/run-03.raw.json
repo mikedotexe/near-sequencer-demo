@@ -1,0 +1,12 @@
+{
+  "recipe": "chained",
+  "runIndex": 3,
+  "name": "r03-1776572532438",
+  "signer": "mike.testnet",
+  "started": "2026-04-19T04:22:12.438Z",
+  "finished": "2026-04-19T04:22:15.456Z",
+  "counterId": "recipes-counter.mike.testnet",
+  "delta": 1,
+  "yieldTxHash": "Hf7qnFSJPgjUcE6orFhdtSR18wJAzRNsdR7jeu3hrMM2",
+  "resumeTxHash": "BPCKd5MyaFAHsyLBaSwd9pz1QgbZBYjpHV3Z2oUQZXHA"
+}
