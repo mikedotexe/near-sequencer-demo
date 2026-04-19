@@ -148,6 +148,41 @@ class Satellite(VGroup):
         self.budget_tracker = ValueTracker(1.0)
         self.budget_ring = None  # set when attached to scene
 
+        # Urgency state — flipped by `set_urgency` when the yield
+        # budget is about to expire. The `budget_numeral` event's
+        # updater drives this from TimelinePlayer so body + numeral
+        # respond to a single threshold, giving the viewer one
+        # coherent "time is almost up" signal across channels. Lazy
+        # init: stays False until first set_urgency call.
+        self._is_urgent = False
+
+    def set_urgency(self, urgent: bool):
+        """Tint the body amber → red (or back) based on budget state.
+
+        The core body reads as "this callback is about to time out"
+        when ``urgent=True``. Called from the `budget_numeral` event's
+        updater when remaining blocks cross a threshold (currently
+        <20). Idempotent and cheap — skips re-rendering when state is
+        already at the target.
+
+        Keeping the body_glow in a matching red-tinted version
+        preserves the lit 3D bead look. The body stroke edge stays at
+        SATELLITE_EDGE for silhouette consistency.
+        """
+        if self._is_urgent == urgent:
+            return
+        self._is_urgent = urgent
+        if urgent:
+            self.body.set_fill(color=FAILURE_RED)
+            # Lighter red for the glow, mirroring how
+            # SATELLITE_AMBER_GLOW is brighter than SATELLITE_AMBER.
+            self.body_glow.set_fill(
+                color=_lerp_hex(FAILURE_RED, "#ffffff", 0.35),
+            )
+        else:
+            self.body.set_fill(color=SATELLITE_AMBER)
+            self.body_glow.set_fill(color=SATELLITE_AMBER_GLOW)
+
     # ------------------------------------------------------------------
     # Orbit mechanics
     # ------------------------------------------------------------------

@@ -34,13 +34,16 @@
     { "block": 1008, "type": "yield_eject", "actor": "recipes",
       "target": "recipes", "method": "on_handoff_resumed", "step_id": "h1" },
 
+    { "block": 1010, "type": "budget_numeral", "step_id": "h1", "offset": [1.6, 0.9], "font_size": 44 },
+
     { "block": 1060, "type": "narrative", "title": "waiting \u2014 bob never claims",
-      "body": "blocks pass. bob is on stage but signs nothing. the callback receipt is still scheduled, prepaid gas still locked, NEP-519's 200-block budget ticking." },
+      "body": "blocks pass. bob is on stage but signs nothing. the callback receipt is still scheduled, prepaid gas still locked, NEP-519's 200-block budget ticking \u2014 watch the numeral drain." },
 
     { "block": 1206, "type": "narrative", "title": "budget exhausted \u2014 refund",
       "body": "at yield + 200 blocks, the runtime delivers PromiseError to the already-scheduled callback. its Err arm runs Promise::new(alice).transfer(amount). the funds go home." },
 
     { "block": 1208, "type": "settle", "actor": "recipes", "step_id": "h1", "status": "timeout" },
+    { "block": 1209, "type": "budget_numeral_hide", "step_id": "h1" },
 
     { "block": 1212, "type": "narrative", "title": "refunded",
       "body": "trace events handoff_refunded and recipe_resolved_err emitted; 0.01 NEAR landed back on alice. the same receipt that would have paid bob on a claim paid alice on the timeout. one primitive, two endings." }

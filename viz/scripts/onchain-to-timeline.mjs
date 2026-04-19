@@ -189,9 +189,17 @@ function assembleTimeout() {
   if (yielded) {
     events.push({ block: yielded.height, type: "yield_eject",
                   actor: "recipes", target: "recipes", method: "on_timeout_resumed", step_id: step });
+    // Budget numeral — visible countdown anchored to the yielded
+    // satellite. Fires a couple of blocks after yield so the viewer
+    // sees it latch onto the satellite already-in-orbit, not co-
+    // emerge. Dismissed one block after the timeout so the terminal
+    // value flashes before the card fades.
+    events.push({ block: yielded.height + 2, type: "budget_numeral",
+                  step_id: step, offset: [1.6, 0.9], font_size: 44 });
   }
   if (timeoutBlock != null) {
     events.push({ block: timeoutBlock, type: "settle", actor: "recipes", step_id: step, status: "timeout" });
+    events.push({ block: timeoutBlock + 1, type: "budget_numeral_hide", step_id: step });
   }
   return events;
 }
@@ -278,6 +286,14 @@ function assembleHandoff() {
       block: yielded.height, type: "yield_eject",
       actor: "recipes", target: "recipes", method: "on_handoff_resumed", step_id: step,
     });
+    // In timeout mode only, spawn the budget countdown so the viewer
+    // watches the 200-block budget drain before the refund fires. In
+    // claim mode the callback fires in ~6 blocks; the numeral would
+    // barely be visible, so skip.
+    if (handoffMode === "timeout") {
+      events.push({ block: yielded.height + 2, type: "budget_numeral",
+                    step_id: step, offset: [1.6, 0.9], font_size: 44 });
+    }
   }
   if (resumeTxBlock != null) {
     // Resume is signed by alice in the current demo flow; even if a
@@ -296,6 +312,9 @@ function assembleHandoff() {
   if (settleBlock != null) {
     const status = released ? "ok" : "timeout";
     events.push({ block: settleBlock, type: "settle", actor: "recipes", step_id: step, status });
+    if (handoffMode === "timeout") {
+      events.push({ block: settleBlock + 1, type: "budget_numeral_hide", step_id: step });
+    }
   }
   return events;
 }

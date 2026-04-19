@@ -31,7 +31,7 @@ from .palette import (
     SATELLITE_AMBER,
     TEXT_LIGHT,
 )
-from .typography import kerned_text
+from .typography import kerned_text, serif_text
 
 
 def build_teach_card(
@@ -42,16 +42,29 @@ def build_teach_card(
 ) -> VGroup:
     """Return a panel VGroup with a title line and an explanatory body.
 
-    `kind` distinguishes two registers:
+    `kind` distinguishes two registers, rendered in different type:
     - "definition" (default) — vocabulary card, fires first time an
-      event type appears. Teal panel, no accent.
+      event type appears. DM Sans (clean, modernist). Teal panel.
     - "narrative" — thesis / question card, fires at author-chosen
-      blocks to frame what the viewer is watching. Same layout, but a
-      thin amber left-edge stripe signals "this is a beat, not a
-      definition".
+      blocks to frame what the viewer is watching. Palatino / serif
+      fallback (editorial). Same panel layout, but a thin amber
+      left-edge stripe + serif type signal "this is a thought, not a
+      label."
     """
-    title_mob = kerned_text(title, font_size=17, color=TEXT_LIGHT)
-    body_mob = kerned_text(body, font_size=13, color=TEXT_LIGHT)
+    if kind == "narrative":
+        # Serif register — slightly larger body font compensates for
+        # serif's typically shorter x-height so the two registers read
+        # at comparable optical density.
+        title_mob = serif_text(title, font_size=19, color=TEXT_LIGHT)
+        body_mob = serif_text(body, font_size=14, color=TEXT_LIGHT)
+    else:
+        # Definition titles often contain snake_case identifiers like
+        # `settle — on_promise_resolved`; underscores look gappy under
+        # the default 120 spacing, so tighten titles to 60. Body text
+        # stays at 120 for prose readability.
+        title_mob = kerned_text(title, font_size=17, color=TEXT_LIGHT,
+                                letter_spacing=60)
+        body_mob = kerned_text(body, font_size=13, color=TEXT_LIGHT)
 
     if body_mob.width > max_body_width:
         # Rather than silently chopping, downsize the font slightly so

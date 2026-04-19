@@ -29,13 +29,16 @@
     { "block": 1008, "type": "yield_eject", "actor": "recipes",
       "target": "recipes", "method": "on_timeout_resumed", "step_id": "t1" },
 
+    { "block": 1010, "type": "budget_numeral", "step_id": "t1", "offset": [1.6, 0.9], "font_size": 44 },
+
     { "block": 1060, "type": "narrative", "title": "waiting \u2014 no resume arrives",
-      "body": "blocks pass. the yielded callback is still registered, prepaid gas is still locked. NEP-519's 200-block timeout is ticking." },
+      "body": "blocks pass. the yielded callback is still registered, prepaid gas is still locked. NEP-519's 200-block timeout is ticking \u2014 watch the numeral drain." },
 
     { "block": 1206, "type": "narrative", "title": "budget exhausted",
       "body": "at yield + 200 blocks, the runtime delivers PromiseError to the callback receipt already waiting in the yield tx's DAG. It executes with #[callback_result] = Err(PromiseError)." },
 
     { "block": 1208, "type": "settle", "actor": "recipes", "step_id": "t1", "status": "timeout" },
+    { "block": 1209, "type": "budget_numeral_hide", "step_id": "t1" },
 
     { "block": 1212, "type": "narrative", "title": "resolved_err",
       "body": "on_timeout_resumed's Err arm ran; trace event recipe_resolved_err emitted. The callback fired exactly once, as promised." }

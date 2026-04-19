@@ -30,11 +30,14 @@ from manim import (
     DashedVMobject,
     Dot,
     RoundedRectangle,
+    Text,
     VGroup,
     FadeIn,
     FadeOut,
     AnimationGroup,
     there_and_back,
+    DOWN,
+    RIGHT,
     WHITE,
 )
 
@@ -47,6 +50,7 @@ from .palette import (
     SATELLITE_AMBER,
     SATELLITE_AMBER_GLOW,
     SATELLITE_EDGE,
+    FAILURE_RED,
 )
 from .sphere import LiquidContract, PersonActor
 from .satellite import Satellite
@@ -58,7 +62,7 @@ from .blooms import (
     eject_ring,
 )
 from .teach import build_teach_card
-from .typography import kerned_text
+from .typography import kerned_text, DEFAULT_FONT
 
 
 # ----------------------------------------------------------------------
@@ -417,6 +421,8 @@ class TimelinePlayer:
                               "The target contract returns a result via a Data receipt."),
         "settle":            ("settle — on_promise_resolved",
                               "Final callback runs with the downstream outcome; yielded promise resolved."),
+        "budget_numeral":    ("budget_numeral",
+                              "Remaining blocks of the NEP-519 200-block budget, counting down as blocks elapse."),
     }
 
     _TEACH_KEEP_ALIVE_BLOCKS = 3   # short dwell so stack stays bounded
@@ -599,16 +605,18 @@ class TimelinePlayer:
 
     def _dispatch(self, ev: dict):
         handler = {
-            "tx_included":        self._ev_tx_included,
-            "yield_eject":        self._ev_yield_eject,
-            "resume_data":        self._ev_resume_data,
-            "resume_action":      self._ev_resume_action,
-            "downstream_call":    self._ev_downstream_call,
-            "downstream_return":  self._ev_downstream_return,
-            "settle":             self._ev_settle,
-            "actor_appear":       self._ev_actor_appear,
-            "narrative":          self._ev_narrative,
-            "pending":            lambda _ev: None,
+            "tx_included":          self._ev_tx_included,
+            "yield_eject":          self._ev_yield_eject,
+            "resume_data":          self._ev_resume_data,
+            "resume_action":        self._ev_resume_action,
+            "downstream_call":      self._ev_downstream_call,
+            "downstream_return":    self._ev_downstream_return,
+            "settle":               self._ev_settle,
+            "budget_numeral":       self._ev_budget_numeral,
+            "budget_numeral_hide":  self._ev_budget_numeral_hide,
+            "actor_appear":         self._ev_actor_appear,
+            "narrative":            self._ev_narrative,
+            "pending":              lambda _ev: None,
         }.get(ev["type"])
         if handler is None:
             return None
@@ -1057,6 +1065,140 @@ class TimelinePlayer:
             self._release_orbit_guide(ev["actor"])
 
         return anim, cleanup
+
+    # ------------------------------------------------------------------
+    # Budget numeral — visible NEP-519 countdown
+    # ------------------------------------------------------------------
+
+    def _ev_budget_numeral(self, ev):
+        """Large amber countdown anchored near a specific satellite.
+        Makes the 200-block yield budget tactile: the viewer watches
+        a running number (198 → 97 → 20 → 0 blocks) rather than just
+        an abstract shrinking ring.
+
+        Fields:
+            step_id    — which satellite to track (required)
+            offset     — [dx, dy] from satellite body (default [1.2, 0.7])
+            font_size  — default 40
+
+        The numeral updates via a per-frame updater that reads the
+        satellite's ejection block and the scene's current block.
+        Remove it via a matching `budget_numeral_hide` event targeting
+        the same step_id (typically one block after timeout/settle,
+        so the terminal '0' still flashes before dismissal).
+
+        Urgency threshold: below 20 remaining blocks, the numeral and
+        the satellite body both tint red in the same beat, so the
+        "time is almost up" signal reads across channels.
+
+        Registered as an ephemeron; if the author forgets the hide
+        event, the ephemera-leak check at scene end names the leaker.
+        """
+        step_id = ev.get("step_id")
+        if not step_id:
+            return None
+        sat = self.satellites.get(step_id)
+        if sat is None:
+            return None
+        ejected = self._ejection_blocks.get(step_id)
+        if ejected is None:
+            return None
+
+        font_size = int(ev.get("font_size", 40))
+        offset = ev.get("offset") or [1.2, 0.7]
+        dx, dy = float(offset[0]), float(offset[1])
+
+        # Two-piece group: the big number + small "blocks" label.
+        # Amber matches the budget ring so the viewer ties the number
+        # visually to the arc shrinking on the satellite.
+        numeral = Text(
+            f"{self._yield_budget_blocks}",
+            font=DEFAULT_FONT, font_size=font_size, color=SATELLITE_AMBER,
+        )
+        unit = Text(
+            "blocks",
+            font=DEFAULT_FONT, font_size=int(font_size * 0.45),
+            color=SATELLITE_AMBER,
+        )
+        group = VGroup(numeral, unit)
+        unit.next_to(numeral, RIGHT, buff=0.12, aligned_edge=DOWN)
+        sat_center = np.array(
+            sat.body.get_center() if hasattr(sat, "body") else sat.get_center(),
+            dtype=float,
+        )
+        group.move_to(sat_center + np.array([dx, dy, 0.0]))
+        self._register_ephemeron(group)
+        self.scene.add(group)
+
+        # Track which numeral belongs to which step_id so the matching
+        # hide event can find + remove it.
+        self._budget_numerals = getattr(self, "_budget_numerals", {})
+        self._budget_numerals[step_id] = group
+
+        last_value_box = {"v": self._yield_budget_blocks}
+
+        # Param name `dt` is load-bearing: Manim's Mobject.update
+        # inspects `"dt" in inspect.signature(updater).parameters` to
+        # decide whether to call updater(self, dt) or updater(self).
+        # We don't use dt — the scene's block clock (self._current_block)
+        # advances per _tick_blocks, not per frame — but the parameter
+        # must exist and be named dt for the signature check to match.
+        def updater(_mob, dt):
+            elapsed = self._current_block - ejected
+            remaining = max(0, self._yield_budget_blocks - elapsed)
+            # Only rebuild the Text mobject when the displayed integer
+            # actually changes — rebuilding a Text SVG every frame is
+            # expensive and unnecessary.
+            if remaining != last_value_box["v"]:
+                last_value_box["v"] = remaining
+                # Urgency recolour: below threshold the numeral and
+                # its unit label go red; the satellite body follows
+                # via set_urgency so body + numeral tell one coherent
+                # story instead of two competing channels.
+                urgent = remaining < 20
+                colour = FAILURE_RED if urgent else SATELLITE_AMBER
+                new_numeral = Text(
+                    f"{remaining}",
+                    font=DEFAULT_FONT, font_size=font_size, color=colour,
+                )
+                new_numeral.move_to(numeral.get_center())
+                numeral.become(new_numeral)
+                unit.set_color(colour)
+                unit.next_to(numeral, RIGHT, buff=0.12, aligned_edge=DOWN)
+                if hasattr(sat, "set_urgency"):
+                    sat.set_urgency(urgent)
+            # Follow the satellite even if it orbits — the numeral is
+            # conceptually attached to the satellite's body.
+            current_center = np.array(
+                sat.body.get_center() if hasattr(sat, "body") else sat.get_center(),
+                dtype=float,
+            )
+            group.move_to(current_center + np.array([dx, dy, 0.0]))
+
+        group.add_updater(updater)
+        return FadeIn(group, run_time=0.45)
+
+    def _ev_budget_numeral_hide(self, ev):
+        """Remove a budget_numeral previously spawned for this step_id.
+        Detaches the updater, fades out, deregisters the ephemeron.
+        Typically fires one block after timeout/settle so the terminal
+        value flashes before the card dismisses.
+        """
+        step_id = ev.get("step_id")
+        numerals = getattr(self, "_budget_numerals", None) or {}
+        group = numerals.get(step_id)
+        if group is None:
+            return None
+        group.clear_updaters()
+        fade_out = FadeOut(group, run_time=0.45)
+
+        def cleanup():
+            if group in self.scene.mobjects:
+                self.scene.remove(group)
+            self._deregister_ephemeron(group)
+            numerals.pop(step_id, None)
+
+        return fade_out, cleanup
 
     # ------------------------------------------------------------------
     # Authoring events — reveal + narrative

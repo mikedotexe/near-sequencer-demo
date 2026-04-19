@@ -156,21 +156,36 @@ class LiquidContract(VGroup):
             self.highlight, self.name_label, self.caption,
         )
 
-        # Breathe: subtle ±3% scale pulse on the halo group, ~4s period.
-        # Scaling the VGroup uniformly keeps the three concentric
-        # halos aligned; tracking the previous scale avoids drift.
-        self._breathe_phase = 0.0
+        # Breathe: subtle ±3% scale pulse on the halo group, ~4s
+        # period, plus a synchronized ±0.04 opacity breath on the
+        # inner glow. Two channels at one rhythm — "the sphere
+        # inhales" reads coherently across halo geometry and glow
+        # emission. Phase is hash-seeded off account_id so multi-
+        # contract scenes don't breathe in lockstep; each sphere
+        # feels like its own living thing instead of a chorus line.
+        # hash() is process-randomized in Python, but scenes render in
+        # one process so phase is stable within a render; that's all
+        # we need (the point is per-sphere distinctness, not
+        # reproducibility across processes).
+        self._breathe_phase = float((hash(self.account_id) % 628) / 100.0)
         self._halo_scale = 1.0
+        self._body_glow_baseline = 0.32
         halo_center = self.body.get_center()
 
         def _breathe(group, dt):
             self._breathe_phase += dt
-            target = 1.0 + 0.03 * np.sin(self._breathe_phase * (TAU / 4.0))
+            wave = np.sin(self._breathe_phase * (TAU / 4.0))
+            target = 1.0 + 0.03 * wave
             delta = target / self._halo_scale
-            if abs(delta - 1.0) < 1e-4:
-                return
-            group.scale(delta, about_point=halo_center)
-            self._halo_scale = target
+            if abs(delta - 1.0) >= 1e-4:
+                group.scale(delta, about_point=halo_center)
+                self._halo_scale = target
+            # Glow emission — tied to the same phase so brightening
+            # tracks the halo expansion. Amplitude small enough
+            # (±0.04 on 0.32 baseline) that the signal reads as
+            # living, not pulsing. wobble() scales body_glow but
+            # doesn't touch fill_opacity, so the two channels coexist.
+            self.body_glow.set_fill(opacity=self._body_glow_baseline + 0.04 * wave)
 
         self.halo.add_updater(_breathe)
 
