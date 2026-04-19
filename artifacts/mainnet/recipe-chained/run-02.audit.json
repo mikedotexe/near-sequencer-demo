@@ -1,0 +1,44 @@
+{
+  "recipe": "chained",
+  "runIndex": 2,
+  "name": "r02-1776618139250",
+  "signer": "mike.near",
+  "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
+  "counterId": "recipes-counter.mike.near",
+  "delta": -1,
+  "yieldTxHash": "F93Av4HNMywf28hHrx7GkToUSiVBxF6r1NzVKKddEydf",
+  "yieldBlockHeight": 194707657,
+  "resumeTxHash": "3oS9u2H2NZySM65BNWawhGLorhjGMcdo8DNojXBsM2kh",
+  "resumeBlockHeight": 194707660,
+  "dispatchBlockHeight": 194707662,
+  "callbackBlockHeight": 194707664,
+  "observedValue": 0,
+  "resolvedOk": true,
+  "blocksFromYieldToResume": 3,
+  "blocksFromResumeToDispatch": 2,
+  "blocksFromDispatchToCallback": 2,
+  "explorerUrl": "https://nearblocks.io/txns/3oS9u2H2NZySM65BNWawhGLorhjGMcdo8DNojXBsM2kh",
+  "interpretation": "dispatched counter.decrement; observed=0; yield→resume=3b; resume→dispatch=2b; dispatch→callback=2b",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resumed": "resume",
+    "recipe_dispatched": "yield",
+    "recipe_callback_observed": "yield",
+    "recipe_resolved_ok": "yield"
+  },
+  "dagInvariantViolations": [],
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.near",
+    "contractShard": 4,
+    "receiptsChecked": 2,
+    "wrongShardReceipts": []
+  }
+}

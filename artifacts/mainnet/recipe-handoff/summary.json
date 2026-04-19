@@ -1,0 +1,252 @@
+{
+  "recipe": "handoff",
+  "runCount": 3,
+  "claimCount": 2,
+  "timeoutCount": 1,
+  "settledOkCount": 2,
+  "amountYocto": "10000000000000000000000",
+  "blocksFromYieldToResume": {
+    "min": 6,
+    "max": 6,
+    "median": 6,
+    "count": 2
+  },
+  "blocksFromYieldToSettle": {
+    "min": 8,
+    "max": 202,
+    "median": 8,
+    "count": 3
+  },
+  "claimYieldToSettle": {
+    "min": 8,
+    "max": 8,
+    "median": 8,
+    "count": 2
+  },
+  "timeoutYieldToSettle": {
+    "min": 202,
+    "max": 202,
+    "median": 202,
+    "count": 1
+  },
+  "dagInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsWithViolations": 0,
+    "eventsChecked": 14,
+    "eventsInExpectedPlace": 14,
+    "violations": []
+  },
+  "budgetInvariant": {
+    "held": true,
+    "runsChecked": 1,
+    "runsInRange": 1,
+    "runsOutOfRange": 0,
+    "runsNotEvaluable": 0,
+    "lowerBound": 200,
+    "upperBound": 205,
+    "observedBlocks": [
+      202
+    ],
+    "violations": []
+  },
+  "atomicityInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsAtomicallyHeld": 3,
+    "runsNotEvaluable": 0,
+    "violations": []
+  },
+  "shardInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsOnContractShard": 3,
+    "runsWithWrongShard": 0,
+    "runsNotEvaluable": 0,
+    "contractShards": [
+      4
+    ],
+    "totalReceiptsChecked": 3,
+    "totalReceiptsOnContractShard": 3,
+    "violations": []
+  },
+  "runs": [
+    {
+      "recipe": "handoff",
+      "mode": "claim",
+      "runIndex": 1,
+      "name": "r01-claim-1776618181284",
+      "signer": "mike.near",
+      "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
+      "recipient": "bob.mike.near",
+      "amountYocto": "10000000000000000000000",
+      "yieldTxHash": "3U4QqbFWX9G9wYarRMbTS7ur8TLEW4M4x71Gxy9R64Kb",
+      "yieldBlockHeight": 194707728,
+      "resumeTxHash": "8HdeyfKKqRwC4fQ6cKrXqcbZCfJ7eM1XsJRaqhpH8iGo",
+      "claimSigner": "mike.near",
+      "resumeBlockHeight": 194707734,
+      "settleBlockHeight": 194707736,
+      "fundsRecipient": "bob.mike.near",
+      "settledOk": true,
+      "blocksFromYieldToResume": 6,
+      "blocksFromYieldToSettle": 8,
+      "explorerUrl": "https://nearblocks.io/txns/3U4QqbFWX9G9wYarRMbTS7ur8TLEW4M4x71Gxy9R64Kb",
+      "interpretation": "claim: 10000000000000000000000 yocto → bob.mike.near; yield→resume=6b; yield→settle=8b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_resolved_ok": "yield",
+        "handoff_offered": "yield",
+        "handoff_released": "yield"
+      },
+      "dagInvariantViolations": [],
+      "atomicityInvariant": {
+        "held": true,
+        "evaluable": true,
+        "mode": "claim",
+        "expectedRecipient": "bob.mike.near",
+        "expectedAmountYocto": "10000000000000000000000",
+        "observed": {
+          "receiptId": "6sx4fardZrZJQ2EsN4GeR8m61958s2NWFTx1nRHoMhm1",
+          "receiverId": "bob.mike.near",
+          "depositYocto": "10000000000000000000000",
+          "succeeded": true
+        }
+      },
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.near",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
+      }
+    },
+    {
+      "recipe": "handoff",
+      "mode": "claim",
+      "runIndex": 2,
+      "name": "r02-claim-1776618198734",
+      "signer": "mike.near",
+      "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
+      "recipient": "bob.mike.near",
+      "amountYocto": "10000000000000000000000",
+      "yieldTxHash": "6vAzMedcM9FgHTSFGbThva6bWMatDUEbrFVVBoPFE6Z8",
+      "yieldBlockHeight": 194707758,
+      "resumeTxHash": "8sDDmP23Le9jMSA6JnezEycBJtDcPfRke4pJkwZerrE3",
+      "claimSigner": "mike.near",
+      "resumeBlockHeight": 194707764,
+      "settleBlockHeight": 194707766,
+      "fundsRecipient": "bob.mike.near",
+      "settledOk": true,
+      "blocksFromYieldToResume": 6,
+      "blocksFromYieldToSettle": 8,
+      "explorerUrl": "https://nearblocks.io/txns/6vAzMedcM9FgHTSFGbThva6bWMatDUEbrFVVBoPFE6Z8",
+      "interpretation": "claim: 10000000000000000000000 yocto → bob.mike.near; yield→resume=6b; yield→settle=8b",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resumed": "resume",
+        "recipe_resolved_ok": "yield",
+        "handoff_offered": "yield",
+        "handoff_released": "yield"
+      },
+      "dagInvariantViolations": [],
+      "atomicityInvariant": {
+        "held": true,
+        "evaluable": true,
+        "mode": "claim",
+        "expectedRecipient": "bob.mike.near",
+        "expectedAmountYocto": "10000000000000000000000",
+        "observed": {
+          "receiptId": "BdrAFGDZoL3QgFfWQZ1UzobKQUiZbdj92cdxNew84BST",
+          "receiverId": "bob.mike.near",
+          "depositYocto": "10000000000000000000000",
+          "succeeded": true
+        }
+      },
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.near",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
+      }
+    },
+    {
+      "recipe": "handoff",
+      "mode": "timeout",
+      "runIndex": 1,
+      "name": "r01-timeout-1776618637201",
+      "signer": "mike.near",
+      "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
+      "recipient": "bob.mike.near",
+      "amountYocto": "10000000000000000000000",
+      "yieldTxHash": "qB7ztPasTwuXMHGoVDn5MyXdcEqXmxTTWArPnNxWLmj",
+      "yieldBlockHeight": 194708501,
+      "resumeTxHash": null,
+      "claimSigner": null,
+      "resumeBlockHeight": null,
+      "settleBlockHeight": 194708703,
+      "fundsRecipient": "mike.near",
+      "settledOk": false,
+      "blocksFromYieldToResume": null,
+      "blocksFromYieldToSettle": 202,
+      "explorerUrl": "https://nearblocks.io/txns/qB7ztPasTwuXMHGoVDn5MyXdcEqXmxTTWArPnNxWLmj",
+      "interpretation": "timeout: refunded 10000000000000000000000 yocto → mike.near; yield→settle=202b (NEP-519 budget = 200)",
+      "dagPlacement": {
+        "recipe_yielded": "yield",
+        "recipe_resolved_err": "yield",
+        "handoff_offered": "yield",
+        "handoff_refunded": "yield"
+      },
+      "dagInvariantViolations": [],
+      "atomicityInvariant": {
+        "held": true,
+        "evaluable": true,
+        "mode": "timeout",
+        "expectedRecipient": "mike.near",
+        "expectedAmountYocto": "10000000000000000000000",
+        "observed": {
+          "receiptId": "N3m83bdro5SddFkxLmBDSUjszTKm5xXoVfBoSrnizQW",
+          "receiverId": "mike.near",
+          "depositYocto": "10000000000000000000000",
+          "succeeded": true
+        }
+      },
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.near",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
+      },
+      "budgetInvariant": {
+        "held": true,
+        "evaluable": true,
+        "observedBlocks": 202,
+        "lowerBound": 200,
+        "upperBound": 205
+      }
+    }
+  ]
+}

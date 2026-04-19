@@ -1,0 +1,12 @@
+{
+  "recipe": "chained",
+  "runIndex": 1,
+  "name": "r01-1776618118506",
+  "signer": "mike.near",
+  "started": "2026-04-19T17:01:58.506Z",
+  "finished": "2026-04-19T17:02:00.677Z",
+  "counterId": "recipes-counter.mike.near",
+  "delta": 1,
+  "yieldTxHash": "4Rbnm1W7fEkb7LywVwQoK9HUZbzZfYckwP278mME33Uw",
+  "resumeTxHash": "2hEAgjyBJqFodABzkWwRQiL4gUAxAr7JunuXKTyFN7uq"
+}

@@ -1,0 +1,40 @@
+{
+  "recipe": "timeout",
+  "runIndex": 1,
+  "name": "r01-1776618217314",
+  "signer": "mike.near",
+  "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
+  "yieldTxHash": "2AnThBJPY8axMobw6DkA8QBYj1k8edm5QHcpo5dwMQ8R",
+  "yieldBlockHeight": 194707791,
+  "callbackBlockHeight": 194707993,
+  "timeoutFired": true,
+  "blocksFromYieldToCallback": 202,
+  "explorerUrl": "https://nearblocks.io/txns/2AnThBJPY8axMobw6DkA8QBYj1k8edm5QHcpo5dwMQ8R",
+  "interpretation": "timeout fired after 202 blocks (NEP-519 budget = 200)",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resolved_err": "yield"
+  },
+  "dagInvariantViolations": [],
+  "budgetInvariant": {
+    "held": true,
+    "evaluable": true,
+    "observedBlocks": 202,
+    "lowerBound": 200,
+    "upperBound": 205
+  },
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.near",
+    "contractShard": 4,
+    "receiptsChecked": 1,
+    "wrongShardReceipts": []
+  }
+}

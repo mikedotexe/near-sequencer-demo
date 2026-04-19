@@ -1,0 +1,15 @@
+{
+  "recipe": "handoff",
+  "runIndex": 1,
+  "mode": "claim",
+  "name": "r01-claim-1776618181284",
+  "signer": "mike.near",
+  "recipient": "bob.mike.near",
+  "amountYocto": "10000000000000000000000",
+  "started": "2026-04-19T17:03:01.284Z",
+  "finished": "2026-04-19T17:03:05.032Z",
+  "yieldTxHash": "3U4QqbFWX9G9wYarRMbTS7ur8TLEW4M4x71Gxy9R64Kb",
+  "yieldBlockHeight": 194707728,
+  "resumeTxHash": "8HdeyfKKqRwC4fQ6cKrXqcbZCfJ7eM1XsJRaqhpH8iGo",
+  "claimSigner": "mike.near"
+}

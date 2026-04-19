@@ -1,0 +1,38 @@
+{
+  "recipe": "basic",
+  "runIndex": 2,
+  "name": "r02-1776618085222",
+  "signer": "mike.near",
+  "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
+  "yieldTxHash": "6wvg7gZujQxdj5bX6f1Yaaeqy8B9joxKyFdnVVKgtDkP",
+  "yieldBlockHeight": 194707566,
+  "resumeTxHash": "C7LwEKp4gHPJQ2EbY9iHph7LfTUU2R7ttvNajy5k22h",
+  "resumeBlockHeight": 194707569,
+  "callbackBlockHeight": 194707571,
+  "resolvedOk": true,
+  "resolvedPayload": "hello-2",
+  "blocksFromYieldToResume": 3,
+  "blocksFromResumeToCallback": 2,
+  "explorerUrl": "https://nearblocks.io/txns/C7LwEKp4gHPJQ2EbY9iHph7LfTUU2R7ttvNajy5k22h",
+  "interpretation": "resolved_ok with payload=\"hello-2\"; yield→resume=3b; resume→callback=2b",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resumed": "resume",
+    "recipe_resolved_ok": "yield"
+  },
+  "dagInvariantViolations": [],
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.near",
+    "contractShard": 4,
+    "receiptsChecked": 1,
+    "wrongShardReceipts": []
+  }
+}

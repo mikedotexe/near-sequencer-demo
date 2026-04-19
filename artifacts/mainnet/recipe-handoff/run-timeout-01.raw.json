@@ -1,0 +1,15 @@
+{
+  "recipe": "handoff",
+  "runIndex": 1,
+  "mode": "timeout",
+  "name": "r01-timeout-1776618637201",
+  "signer": "mike.near",
+  "recipient": "bob.mike.near",
+  "amountYocto": "10000000000000000000000",
+  "started": "2026-04-19T17:10:37.201Z",
+  "finished": "2026-04-19T17:15:38.945Z",
+  "yieldTxHash": "qB7ztPasTwuXMHGoVDn5MyXdcEqXmxTTWArPnNxWLmj",
+  "yieldBlockHeight": 194708501,
+  "resumeTxHash": null,
+  "claimSigner": null
+}

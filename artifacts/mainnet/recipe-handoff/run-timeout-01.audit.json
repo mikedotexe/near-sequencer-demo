@@ -1,0 +1,63 @@
+{
+  "recipe": "handoff",
+  "mode": "timeout",
+  "runIndex": 1,
+  "name": "r01-timeout-1776618637201",
+  "signer": "mike.near",
+  "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
+  "recipient": "bob.mike.near",
+  "amountYocto": "10000000000000000000000",
+  "yieldTxHash": "qB7ztPasTwuXMHGoVDn5MyXdcEqXmxTTWArPnNxWLmj",
+  "yieldBlockHeight": 194708501,
+  "resumeTxHash": null,
+  "claimSigner": null,
+  "resumeBlockHeight": null,
+  "settleBlockHeight": 194708703,
+  "fundsRecipient": "mike.near",
+  "settledOk": false,
+  "blocksFromYieldToResume": null,
+  "blocksFromYieldToSettle": 202,
+  "explorerUrl": "https://nearblocks.io/txns/qB7ztPasTwuXMHGoVDn5MyXdcEqXmxTTWArPnNxWLmj",
+  "interpretation": "timeout: refunded 10000000000000000000000 yocto → mike.near; yield→settle=202b (NEP-519 budget = 200)",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resolved_err": "yield",
+    "handoff_offered": "yield",
+    "handoff_refunded": "yield"
+  },
+  "dagInvariantViolations": [],
+  "atomicityInvariant": {
+    "held": true,
+    "evaluable": true,
+    "mode": "timeout",
+    "expectedRecipient": "mike.near",
+    "expectedAmountYocto": "10000000000000000000000",
+    "observed": {
+      "receiptId": "N3m83bdro5SddFkxLmBDSUjszTKm5xXoVfBoSrnizQW",
+      "receiverId": "mike.near",
+      "depositYocto": "10000000000000000000000",
+      "succeeded": true
+    }
+  },
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.near",
+    "contractShard": 4,
+    "receiptsChecked": 1,
+    "wrongShardReceipts": []
+  },
+  "budgetInvariant": {
+    "held": true,
+    "evaluable": true,
+    "observedBlocks": 202,
+    "lowerBound": 200,
+    "upperBound": 205
+  }
+}

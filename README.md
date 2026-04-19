@@ -9,18 +9,23 @@ primitive.
 - **What's here.** Four recipes on one `recipes` contract
   (basic / timeout / chained / handoff), each a minimal Rust
   method-pair + a runnable TypeScript flow + a Manim-animated
-  scene driven by real on-chain snapshots. Verified on testnet;
-  mainnet support is first-class — see
+  scene driven by real on-chain snapshots. Verified on **both
+  testnet and mainnet** — four invariants PASS identically on
+  each. Mainnet bootstrap runbook:
   [`docs/mainnet-readiness.md`](docs/mainnet-readiness.md).
 - **What it proves.** Four machine-checked invariants on every run,
   visible as a PASS/FAIL header at the top of
-  [`artifacts/testnet/report.md`](artifacts/testnet/report.md):
+  [`artifacts/testnet/report.md`](artifacts/testnet/report.md) and
+  [`artifacts/mainnet/report.md`](artifacts/mainnet/report.md):
   **DAG-placement** (mechanic), **Budget** (NEP-519's 200-block
   timeout holds empirically), **Atomicity** (Recipe 4 actually moves
   value), **Shard-placement** (callbacks execute on the contract's
   home shard regardless of which shard the resume tx was signed
   from). Derivation of each in
-  [`docs/invariants.md`](docs/invariants.md).
+  [`docs/invariants.md`](docs/invariants.md); three
+  independent-verification paths (explorer / offline re-audit /
+  archival re-fetch) in
+  [`docs/verification.md`](docs/verification.md).
 - **Mental model.** The yield tx is the root of a receipt tree;
   resume and timeout are both data-delivery ops against an already-
   scheduled callback receipt. That one sentence makes all four

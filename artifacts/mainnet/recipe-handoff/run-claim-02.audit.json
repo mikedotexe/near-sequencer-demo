@@ -1,0 +1,57 @@
+{
+  "recipe": "handoff",
+  "mode": "claim",
+  "runIndex": 2,
+  "name": "r02-claim-1776618198734",
+  "signer": "mike.near",
+  "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
+  "recipient": "bob.mike.near",
+  "amountYocto": "10000000000000000000000",
+  "yieldTxHash": "6vAzMedcM9FgHTSFGbThva6bWMatDUEbrFVVBoPFE6Z8",
+  "yieldBlockHeight": 194707758,
+  "resumeTxHash": "8sDDmP23Le9jMSA6JnezEycBJtDcPfRke4pJkwZerrE3",
+  "claimSigner": "mike.near",
+  "resumeBlockHeight": 194707764,
+  "settleBlockHeight": 194707766,
+  "fundsRecipient": "bob.mike.near",
+  "settledOk": true,
+  "blocksFromYieldToResume": 6,
+  "blocksFromYieldToSettle": 8,
+  "explorerUrl": "https://nearblocks.io/txns/6vAzMedcM9FgHTSFGbThva6bWMatDUEbrFVVBoPFE6Z8",
+  "interpretation": "claim: 10000000000000000000000 yocto → bob.mike.near; yield→resume=6b; yield→settle=8b",
+  "dagPlacement": {
+    "recipe_yielded": "yield",
+    "recipe_resumed": "resume",
+    "recipe_resolved_ok": "yield",
+    "handoff_offered": "yield",
+    "handoff_released": "yield"
+  },
+  "dagInvariantViolations": [],
+  "atomicityInvariant": {
+    "held": true,
+    "evaluable": true,
+    "mode": "claim",
+    "expectedRecipient": "bob.mike.near",
+    "expectedAmountYocto": "10000000000000000000000",
+    "observed": {
+      "receiptId": "BdrAFGDZoL3QgFfWQZ1UzobKQUiZbdj92cdxNew84BST",
+      "receiverId": "bob.mike.near",
+      "depositYocto": "10000000000000000000000",
+      "succeeded": true
+    }
+  },
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.near",
+    "contractShard": 4,
+    "receiptsChecked": 1,
+    "wrongShardReceipts": []
+  }
+}

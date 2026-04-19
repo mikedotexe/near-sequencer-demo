@@ -1,0 +1,11 @@
+{
+  "recipe": "basic",
+  "runIndex": 1,
+  "name": "r01-1776618068220",
+  "signer": "mike.near",
+  "started": "2026-04-19T17:01:08.220Z",
+  "finished": "2026-04-19T17:01:10.422Z",
+  "yieldTxHash": "9Jvgkz465QGTRS2qmudY2d5jr3LSaFkmFTz7Auj8enPC",
+  "resumeTxHash": "EbTgS8gMBri12X8QgRaPV4p4DJ1KeQsvL2tRRtjjBsxu",
+  "resumePayload": "hello-1"
+}
