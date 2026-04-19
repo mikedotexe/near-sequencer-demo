@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "demo": "tsx src/demo.ts"
+    "demo": "tsx src/demo.ts",
+    "test": "tsx test/invariants.test.ts"
   },
   "dependencies": {
     "bs58": "^6.0.0",
