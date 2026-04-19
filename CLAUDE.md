@@ -8,8 +8,9 @@ A compact, visual recipe book for NEAR's NEP-519 yield/resume primitive.
 Two contracts (`recipes` + canonical `counter`) plus one non-contract
 participant (`bob` for Recipe 4), four recipe method groups (basic /
 timeout / chained / handoff), a scripts pipeline that broadcasts them
-on testnet and snapshots receipt DAGs, and Manim scenes per recipe.
-Testnet only. Not a thesis demo.
+and snapshots receipt DAGs, and Manim scenes per recipe. Verified on
+testnet; mainnet support is first-class — see `docs/mainnet-readiness.md`
+for the bootstrap runbook. Not a thesis demo.
 
 If you catch yourself writing about "silent value," "dishonest router,"
 "truthful resolution surface," or "three-flow proof matrix," stop —
@@ -93,15 +94,19 @@ Two things worth internalizing before editing recipes code:
    `receipts_outcome`, not the resume tx's. Audit and translator both
    walk all snapshotted tx DAGs rather than assuming a role.
 
-   This is the first of three machine-checked invariants — DAG-placement,
-   Budget (NEP-519 200-block timeout empirically holds), Atomicity
-   (Recipe 4's Transfer receipt matches recipient + amount + succeeded).
-   Canonical derivations in `docs/invariants.md`; per-run check sites in
-   `scripts/src/audit.ts:{computeDagPlacement,checkBudget,checkAtomicity}`;
+   This is the first of four machine-checked invariants —
+   DAG-placement (above), Budget (NEP-519 200-block timeout empirically
+   holds), Atomicity (Recipe 4's Transfer receipt matches recipient +
+   amount + succeeded), and Shard-placement (every callback-emitting
+   receipt executes on the contract's home shard via
+   `outcome.executor_id == contract`, the directly observable form of
+   NEAR's shard-per-receiver semantics). Canonical derivations in
+   `docs/invariants.md`; per-run check sites in
+   `scripts/src/audit.ts:{computeDagPlacement,checkBudget,checkAtomicity,computeShardPlacement}`;
    per-recipe roll-ups in `scripts/src/aggregate.ts:{computeDagInvariant,
-   computeBudgetInvariant,computeAtomicityInvariant}`; unit tests in
-   `scripts/test/invariants.test.ts`. A violation prints a loud `!!`
-   stderr line from audit and exits non-zero.
+   computeBudgetInvariant,computeAtomicityInvariant,computeShardInvariant}`;
+   unit tests in `scripts/test/invariants.test.ts`. A violation prints a
+   loud `!!` stderr line from audit and exits non-zero.
 
 2. **`testing_env!` wipes registered YieldIds.** Each mock VM reset
    throws away registered yields, so a unit test cannot drive yield +
@@ -165,12 +170,18 @@ reanalyzable offline.
 ### Network abstraction
 
 All pipeline commands honour `NEAR_NETWORK=testnet|mainnet` (default
-testnet). `scripts/src/config.ts` derives everything from that env var.
-Mainnet is not a recommended deploy target for this repo, but the
-guard exists in case someone reuses the scripts.
+testnet). `scripts/src/config.ts` derives everything from that env var:
+account names (`recipes.<master>`), RPC endpoints (FastNEAR testnet
+vs. mainnet, both free tier), and expected chain_id. Mainnet and
+testnet are equally supported teaching targets — testnet is the
+default for casual hacking; mainnet is for reproducing the empirical
+evidence under real validator load (see `docs/mainnet-readiness.md`).
 
-Any new subcommand that broadcasts a tx must call
-`assertChainIdMatches()` (scripts/src/rpc.ts) before signing.
+Any subcommand that broadcasts a tx or destroys accounts must call
+`assertChainIdMatches()` (scripts/src/rpc.ts) before signing — this
+is enforced on `cmdDeploy`, `cmdRun`, and (as of the mainnet-readiness
+work) `cmdClean`. Without the guard, a misconfigured RPC could act
+on the wrong chain even when NEAR_NETWORK is set correctly.
 
 ### Viz
 
@@ -201,9 +212,6 @@ use coined terms when NEAR itself has no term for the concept.
 
 Explicit non-goals, in order of how often they come up:
 
-- **Mainnet deploy.** Static teaching artifact; archival permanence is
-  wasted. The guard `--i-know-this-is-mainnet` exists as a safety but
-  shouldn't be used.
 - **Saga templates / balance triggers / authorized executors.** The
   sibling `smart-account-contract` owns the saga-runner direction; a
   narrower copy here would dilute focus.
@@ -214,3 +222,17 @@ Explicit non-goals, in order of how often they come up:
   transfer. Growing the set would re-expand the repo into a sprawl.
 - **Richer adapter / validator patterns.** Recipe 3 is a single shape;
   pluggable validators belong in the sibling.
+
+### In scope (both networks)
+
+**Mainnet + testnet: both supported.** The four invariants are
+protocol-correctness claims that should hold on any NEAR network,
+and the pipeline is network-agnostic. Testnet is the default for
+casual hacking — free accounts, fast iteration — while mainnet is
+the strongest empirical evidence (real validator load, real
+cross-shard receipt forwarding under the demo's account layout).
+See `docs/mainnet-readiness.md` for the mainnet bootstrap runbook,
+cost estimate, and state-hygiene notes. `cmdClean` refuses to run
+on either network without an explicit `--i-know-this-is-<network>`
+flag; `cmdDeploy` soft-gates mainnet with a 3-second confirmation
+window.

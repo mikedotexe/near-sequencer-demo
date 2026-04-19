@@ -325,18 +325,21 @@ don't apply yet. The infrastructure (`checkX` + `computeXInvariant` +
 summary propagation + report rendering + CI grep) supports n
 invariants; adding two more is additive.
 
-## Testnet and where mainnet would strengthen the evidence
+## Testnet and mainnet
 
 All four invariants are protocol-correctness claims — they should
 hold on any NEAR network, regardless of validator set or traffic
 level. The repo's testnet artifacts are the primary evidence.
 
-A mainnet capture would add a second data point showing the same
-claims hold under real validator load and real cross-shard receipt
+A mainnet capture adds a second data point showing the same claims
+hold under real validator load and real cross-shard receipt
 forwarding. Shard-placement becomes particularly meaningful there:
 cross-shard routing is exercised more often when the signer and
 contract hash to different shards, and mainnet's smaller shard count
 means a higher fraction of receipts actually cross shard boundaries.
-(Currently out of scope for this repo — see the scope-discipline
-section of `../CLAUDE.md` — but the invariant infrastructure is
-network-agnostic and would apply without code changes.)
+
+See [`mainnet-readiness.md`](mainnet-readiness.md) for the bootstrap
+runbook, expected cost, state hygiene analysis, and verification
+steps. The invariant infrastructure is network-agnostic — no code
+changes are needed for a mainnet deploy beyond the
+`NEAR_NETWORK=mainnet` env var.

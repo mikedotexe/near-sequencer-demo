@@ -4,11 +4,11 @@ scripts/dist/
 scripts/package-lock.json
 .DS_Store
 
-# artifacts/ partitions per-network snapshots. testnet is committed as
-# durable proof of the recipe runs (full receipt DAGs + blocks + chunks
-# so offline reanalysis doesn't need archival RPC). mainnet is not used
-# by this repo and stays ignored.
-artifacts/mainnet/
+# artifacts/ partitions per-network snapshots. Both testnet and mainnet
+# captures are committed as durable proof of the recipe runs (full receipt
+# DAGs + blocks + chunks) so offline reanalysis doesn't need archival RPC.
+# See docs/mainnet-readiness.md for the mainnet bootstrap runbook that
+# populates artifacts/mainnet/.
 
 # viz/ animation layer — rendered outputs and Python virtual env.
 # Source (scenes/, common/, data/, scripts/, DESIGN.md, README.md,

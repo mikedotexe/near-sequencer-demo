@@ -6,26 +6,32 @@ primitive.
 
 ## TL;DR — the 30-second take
 
-- **What's here.** Four testnet recipes on one `recipes` contract
+- **What's here.** Four recipes on one `recipes` contract
   (basic / timeout / chained / handoff), each a minimal Rust
   method-pair + a runnable TypeScript flow + a Manim-animated
-  scene driven by real testnet snapshots.
-- **What it proves.** Three machine-checked invariants on every run,
+  scene driven by real on-chain snapshots. Verified on testnet;
+  mainnet support is first-class — see
+  [`docs/mainnet-readiness.md`](docs/mainnet-readiness.md).
+- **What it proves.** Four machine-checked invariants on every run,
   visible as a PASS/FAIL header at the top of
   [`artifacts/testnet/report.md`](artifacts/testnet/report.md):
   **DAG-placement** (mechanic), **Budget** (NEP-519's 200-block
   timeout holds empirically), **Atomicity** (Recipe 4 actually moves
-  value). Derivation of each in
+  value), **Shard-placement** (callbacks execute on the contract's
+  home shard regardless of which shard the resume tx was signed
+  from). Derivation of each in
   [`docs/invariants.md`](docs/invariants.md).
 - **Mental model.** The yield tx is the root of a receipt tree;
   resume and timeout are both data-delivery ops against an already-
   scheduled callback receipt. That one sentence makes all four
-  recipes cohere — §[Three invariants, machine-checked on every
-  run](#three-invariants-machine-checked-on-every-run) below.
-- **Run it or read it.** `scripts/demo.sh all` reproduces the full
-  pipeline on testnet; alternatively, read the committed
-  `artifacts/testnet/report.md` to verify the claims without
-  executing.
+  recipes cohere — §[Four invariants, machine-checked on every
+  run](#four-invariants-machine-checked-on-every-run) below.
+- **Run it or read it.** `NEAR_NETWORK=testnet ./scripts/demo.sh all`
+  reproduces the full pipeline on testnet;
+  `NEAR_NETWORK=mainnet ./scripts/demo.sh all` reproduces on mainnet
+  (~0.5–1 NEAR total; see the readiness runbook). Alternatively, read
+  the committed `artifacts/testnet/report.md` to verify the claims
+  without executing.
 - **Animate it.** `cd viz && make all-recipes` renders four
   ~30-second synthetic scenes; the `*Live` variants replay against
   actual testnet snapshots.
@@ -205,7 +211,7 @@ Observable on testnet: `0.01 NEAR` per handoff. Claim path settles in
 the yield tx's DAG contains the full transfer receipt for whichever
 ending fires.
 
-## Three invariants, machine-checked on every run
+## Four invariants, machine-checked on every run
 
 The mental model that makes all four recipes coherent:
 **`Promise::new_yield` schedules the callback receipt at yield time.**
@@ -215,7 +221,7 @@ already-scheduled receipt — it doesn't create a new one. The 200-block
 timeout path is the same: when the budget expires, the runtime
 delivers `PromiseError` to the receipt it already has.
 
-The audit pipeline empirically checks three invariants on every
+The audit pipeline empirically checks four invariants on every
 snapshotted run and rolls their PASS/VIOLATED status into
 [`artifacts/testnet/report.md`](artifacts/testnet/report.md)'s
 "Invariants at a glance" header. `scripts/demo.sh audit` exits
@@ -241,6 +247,16 @@ pipeline by hand) learns immediately rather than from eyeballing JSON.
    expected recipient (Bob on claim, Alice on timeout) with `deposit`
    equal to the attached `amountYocto` and an outcome status of
    `SuccessValue`. Current corpus: 3/3 runs.
+4. **Shard-placement.** Every callback-emitting receipt executes on
+   the recipes contract's home shard, regardless of which shard the
+   resume tx was signed from. Directly observable as
+   `outcome.executor_id == recipes contract` — the protocol-level
+   form of "the callback stays put on the contract's shard while
+   cross-shard resume only forwards the payload." Current corpus:
+   13/13 callback receipts on contract shard 4 across 10 runs. This
+   invariant gains empirical weight on mainnet (fewer shards, more
+   real cross-shard forwarding) — see
+   [`docs/mainnet-readiness.md`](docs/mainnet-readiness.md).
 
 The timeout recipe is the cleanest proof artifact.
 `recipe-timeout/run-01` snapshots a single yield tx — there is no
@@ -281,13 +297,15 @@ scripts/demo.sh explain-dag timeout      # defaults to first snapshotted run
 scripts/demo.sh explain-dag chained 2
 ```
 
-## Accounts (testnet-only)
+## Accounts (both networks)
+
+Account names template on the master via `NEAR_NETWORK`:
 
 ```
-mike.testnet
-├── recipes.mike.testnet              ← the recipe book contract
-├── recipes-counter.mike.testnet      ← counter (target for Recipe 3)
-└── bob.mike.testnet                  ← nominated handoff recipient (Recipe 4)
+mike.testnet  (NEAR_NETWORK=testnet)         mike.near  (NEAR_NETWORK=mainnet)
+├── recipes.mike.testnet                     ├── recipes.mike.near
+├── recipes-counter.mike.testnet             ├── recipes-counter.mike.near
+└── bob.mike.testnet                         └── bob.mike.near
 ```
 
 `bob` is a non-contract account created at deploy time so Recipe 4 can
@@ -297,9 +315,14 @@ watch change. The demo's resume is permissionless (Alice signs it);
 swapping in a `require!(predecessor == stored.to, ...)` on the resume
 method would gate it to Bob if you want that guarantee.
 
-The repo is testnet-only by design: a static teaching artifact doesn't
-belong in archival. `scripts/demo.sh` refuses mainnet deploy without an
-explicit `--i-know-this-is-mainnet` ack, and we don't encourage it.
+**On both networks**, `scripts/demo.sh clean` refuses to destroy
+accounts without an explicit `--i-know-this-is-<network>` ack and a
+chain-id guard check (so a misconfigured RPC can't delete accounts on
+the wrong chain). Mainnet deploy soft-gates with a 3-second confirmation
+window after printing the target account list. See
+[`docs/mainnet-readiness.md`](docs/mainnet-readiness.md) for the full
+mainnet bootstrap runbook (credentials, funding, expected cost, state
+hygiene).
 
 ## Trace events
 
@@ -358,8 +381,6 @@ and re-sync path.
 
 ## Not included (and why)
 
-- **Mainnet deploy.** This is a static teaching artifact. Mainnet
-  archival permanence is wasted here.
 - **Automation / triggers / saga templates.** Sibling owns that direction.
 - **Multi-sig.** `near/core-contracts/multisig2` is canonical.
 - **More than four recipes, *for now*.** Four is enough to teach the
