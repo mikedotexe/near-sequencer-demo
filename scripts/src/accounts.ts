@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { KeyPair, utils } from "near-api-js";
+import { KeyPair, transactions, utils } from "near-api-js";
 
 import {
   ACCOUNTS,
@@ -17,6 +17,11 @@ import {
   type AccountKey,
 } from "./config.js";
 import { accountExists, connectSender } from "./rpc.js";
+
+// NEAR's "no contract deployed" sentinel: the code_hash of an account
+// without any wasm. Base58 of 32 zero bytes — looks like 32 ones in
+// string form because near-api-js encodes it that way.
+const EMPTY_CODE_HASH = "11111111111111111111111111111111";
 
 // The `recipes` contract's `new()` takes an `owner_id` that gates the
 // four `recipe_*_yield` methods. Set to MASTER_ACCOUNT_ID so the demo
@@ -65,18 +70,26 @@ function writeCredential(accountId: string, keyPair: KeyPair): void {
   writeFileSync(credentialPath(accountId), JSON.stringify(json));
 }
 
-async function ensureAccount(key: AccountKey): Promise<"existed" | "created"> {
-  const accountId = ACCOUNTS[key];
-  if (await accountExists(accountId)) return "existed";
+// Check whether the account has a contract deployed to it. Used to
+// distinguish "fresh account, atomic create+deploy+init needed" from
+// "contract already in place, just redeploy new wasm."
+async function hasContract(accountId: string): Promise<boolean> {
   const near = await connectSender();
-  // Both contracts are direct children of the master; one creator for all.
-  const creator = await near.account(MASTER_ACCOUNT_ID);
-  const keyPair = KeyPair.fromRandom("ed25519");
-  writeCredential(accountId, keyPair);
-  const amount = parseNearToYocto(INITIAL_BALANCE_NEAR);
-  await creator.createAccount(accountId, keyPair.getPublicKey(), amount);
-  return "created";
+  const account = await near.account(accountId);
+  try {
+    const state = await account.state();
+    return state.code_hash !== EMPTY_CODE_HASH;
+  } catch {
+    return false;
+  }
 }
+
+// (Previous `ensureAccount` helper for recipes/counter was folded into
+// `atomicCreateDeployInit`, which does create+deploy+init in one tx.
+// Bob — a non-contract participant — still uses a separate create path
+// below; `near-api-js`'s `createAccount` already batches the
+// CreateAccount + Transfer + AddKey actions atomically, so there's no
+// init-race equivalent to worry about on Bob's side.)
 
 // Bob is a non-contract participant (Recipe 4's nominated recipient).
 // He exists so the handoff's transfer lands on a real account with a
@@ -99,56 +112,124 @@ function wasmSha256(path: string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function deployAndMaybeInit(key: AccountKey): Promise<DeployRecord> {
+// First-time deploy: the sub-account doesn't exist yet. We batch
+// CreateAccount + Transfer + AddKey + DeployContract + FunctionCall(new)
+// into a single atomic tx signed by the master. No front-running window
+// between deploy and init, because there's no window at all — everything
+// lands or nothing does. The master is authorized to CreateAccount on
+// its own sub-account (name must be `.<master>` suffix), so the whole
+// construction is internally consistent.
+async function atomicCreateDeployInit(key: AccountKey): Promise<DeployRecord> {
   const accountId = ACCOUNTS[key];
   const wasmPath = join(REPO_ROOT, WASM_PATHS[key]);
   if (!existsSync(wasmPath)) {
     throw new Error(`wasm not found: ${wasmPath} (did you run demo.sh build?)`);
   }
   const sha = wasmSha256(wasmPath);
-
-  const createState = await ensureAccount(key);
+  const wasmBytes = readFileSync(wasmPath);
 
   const near = await connectSender();
-  const account = await near.account(accountId);
+  const master = await near.account(MASTER_ACCOUNT_ID);
 
-  const wasmBytes = readFileSync(wasmPath);
-  const deployResult = await account.deployContract(wasmBytes);
-  const deployTxHash = deployResult.transaction?.hash ?? deployResult.transaction_outcome?.id ?? "unknown";
+  // Generate the sub-account's full-access keypair locally and write
+  // it to credentials BEFORE broadcasting the tx. If the tx succeeds,
+  // the credential file matches the on-chain AddKey action. If the tx
+  // fails, we have a stray credential file; that's a cheap cleanup
+  // (overwritten on the next attempt).
+  const keyPair = KeyPair.fromRandom("ed25519");
+  writeCredential(accountId, keyPair);
 
-  let initTxHash: string | null = null;
-  let initSkippedReason: string | null = null;
-  try {
-    const initArgs = INIT_ARGS[key];
-    const result = await account.functionCall({
-      contractId: accountId,
-      methodName: "new",
-      args: initArgs,
-      gas: BigInt(60_000_000_000_000),
-      attachedDeposit: 0n,
-    });
-    initTxHash = result.transaction?.hash ?? null;
-  } catch (e) {
-    const msg = (e as Error).message ?? "";
-    if (/already\b.*(exists|initialized)|state already exists|ContractCodeDoesntExist/i.test(msg)) {
-      initSkippedReason = "already-initialized";
-    } else {
-      throw e;
-    }
-  }
+  const amount = parseNearToYocto(INITIAL_BALANCE_NEAR);
+  const argsBytes = Buffer.from(JSON.stringify(INIT_ARGS[key]));
+  const actions = [
+    transactions.createAccount(),
+    transactions.transfer(amount),
+    transactions.addKey(keyPair.getPublicKey(), transactions.fullAccessKey()),
+    transactions.deployContract(wasmBytes),
+    transactions.functionCall("new", argsBytes, BigInt(60_000_000_000_000), 0n),
+  ];
+
+  const result = await master.signAndSendTransaction({
+    receiverId: accountId,
+    actions,
+  });
+  const txHash =
+    result.transaction?.hash ?? result.transaction_outcome?.id ?? "unknown";
 
   return {
     key,
     accountId,
-    created: createState === "created",
+    created: true,
+    wasmPath,
+    wasmSha256: sha,
+    wasmSize: wasmBytes.length,
+    deployTxHash: txHash,
+    initTxHash: txHash, // same atomic tx as the deploy
+    initSkippedReason: null,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// Re-deploy: the account exists AND has a contract already. Upload
+// new wasm; state is preserved by NEAR (no init call, since init
+// would panic on existing state). Used when the same contract has
+// been deployed and initialized before and the code is being
+// refreshed without a full clean.
+async function redeployOnly(key: AccountKey): Promise<DeployRecord> {
+  const accountId = ACCOUNTS[key];
+  const wasmPath = join(REPO_ROOT, WASM_PATHS[key]);
+  if (!existsSync(wasmPath)) {
+    throw new Error(`wasm not found: ${wasmPath} (did you run demo.sh build?)`);
+  }
+  const sha = wasmSha256(wasmPath);
+  const wasmBytes = readFileSync(wasmPath);
+
+  const near = await connectSender();
+  const account = await near.account(accountId);
+  const deployResult = await account.deployContract(wasmBytes);
+  const deployTxHash =
+    deployResult.transaction?.hash ??
+    deployResult.transaction_outcome?.id ??
+    "unknown";
+
+  return {
+    key,
+    accountId,
+    created: false,
     wasmPath,
     wasmSha256: sha,
     wasmSize: wasmBytes.length,
     deployTxHash,
-    initTxHash,
-    initSkippedReason,
+    initTxHash: null,
+    initSkippedReason: "already-initialized",
     timestamp: new Date().toISOString(),
   };
+}
+
+async function deployAndMaybeInit(key: AccountKey): Promise<DeployRecord> {
+  const accountId = ACCOUNTS[key];
+  const exists = await accountExists(accountId);
+  if (!exists) {
+    // Fresh deploy — atomic create+deploy+init; no front-run window.
+    return await atomicCreateDeployInit(key);
+  }
+  const codeDeployed = await hasContract(accountId);
+  if (!codeDeployed) {
+    // Unusual: account exists but has no contract. Could mean a prior
+    // deploy was partially completed (account created, wasm upload
+    // failed) or the account was created out-of-band. We refuse
+    // rather than silently re-init because the safest recovery is a
+    // clean delete → atomic redeploy, not a sequence of partial
+    // patches that might leave state half-set.
+    throw new Error(
+      `Account ${accountId} exists but has no contract deployed. ` +
+        `To recover: run \`./scripts/demo.sh clean --i-know-this-is-${NEAR_NETWORK}\` ` +
+        `to delete the account, then retry \`./scripts/demo.sh deploy\` for a ` +
+        `fresh atomic create+deploy+init.`,
+    );
+  }
+  // Contract exists and is assumed initialized. Just redeploy new wasm.
+  return await redeployOnly(key);
 }
 
 export interface DeployRecord {

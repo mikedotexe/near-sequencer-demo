@@ -152,6 +152,34 @@ steady state because every yield path pairs with a cleanup:
 **Per-run net state delta: 0.** A 10-run capture, start to finish,
 leaves both maps empty.
 
+### Secure init — atomic create+deploy+init
+
+First-time deploys of the recipes and counter contracts use a single
+atomic transaction signed by the master, with five actions in order:
+`CreateAccount`, `Transfer` (funding), `AddKey` (full-access key for
+our generated keypair), `DeployContract` (wasm upload), and
+`FunctionCall("new", {owner_id: MASTER_ACCOUNT_ID})`. Implementation:
+[`scripts/src/accounts.ts`](../scripts/src/accounts.ts)
+`atomicCreateDeployInit`.
+
+The batch closes the front-running window that would otherwise exist
+between a separate `deployContract` tx and a following `functionCall("new", ...)`
+tx. In the naive two-tx pattern, an attacker who sees the `deployContract`
+land could race ahead with `functionCall("new", {owner_id: "attacker.near"})`
+before the legitimate init lands — capturing ownership of a contract
+the demo just deployed. With the atomic pattern, `CreateAccount`,
+`DeployContract`, and the init `FunctionCall` either all succeed
+together or none do; there's no observable state between steps to
+race against, because the account literally doesn't exist until the
+whole tx lands.
+
+Re-deploys (account exists with contract already) skip the init and
+just upload new wasm via `account.deployContract`; NEAR preserves
+existing state, `#[init]` isn't re-run, and the original `owner_id`
+binding is preserved. An account that exists without a contract —
+the rare "partial prior deploy" case — causes a loud error prompting
+`clean` + retry rather than silently half-initializing.
+
 ### External-abuse protection (owner-gated yields)
 
 The four `recipe_*_yield` methods are gated by an `owner_id` bound
