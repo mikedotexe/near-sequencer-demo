@@ -24,10 +24,11 @@ scenes per recipe.
 
 Empirical status: all four invariants PASS identically on testnet
 *and* mainnet — committed bytes-on-chain evidence, not just support.
-Side-by-side grid in `artifacts/comparative.md`; independent-
-verification paths (explorer eyeball / offline re-audit / archival
-re-fetch) in `docs/verification.md`. Mainnet bootstrap runbook in
-`docs/mainnet-readiness.md`. Not a thesis demo.
+Side-by-side grid in `artifacts/comparative.md`; four independent-
+verification paths (explorer eyeball / one-curl FastNEAR read /
+offline re-audit / archival re-fetch) in `docs/verification.md`.
+Mainnet bootstrap runbook in `docs/mainnet-readiness.md`. Not a
+thesis demo.
 
 If you catch yourself writing about "silent value," "dishonest router,"
 "truthful resolution surface," or "three-flow proof matrix," stop —

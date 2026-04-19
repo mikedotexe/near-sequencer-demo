@@ -427,7 +427,7 @@ export function writeReport(): string {
   );
   lines.push("");
   lines.push(
-    "**What this report is.** The empirical evidence — tx hashes, receipt DAGs, and block deltas — behind the claim that the `recipes` contract achieves *contract-controlled sequential receipt execution across block boundaries* using NEP-519 yield/resume. The four invariants in the badge header are the machine-checked proof surface; see [`docs/invariants.md`](../../docs/invariants.md) for their derivation and [`docs/verification.md`](../../docs/verification.md) for three independent ways to re-derive these results yourself.",
+    "**What this report is.** The empirical evidence — tx hashes, receipt DAGs, and block deltas — behind the claim that the `recipes` contract achieves *contract-controlled sequential receipt execution across block boundaries* using NEP-519 yield/resume. The four invariants in the badge header are the machine-checked proof surface; see [`docs/invariants.md`](../../docs/invariants.md) for their derivation and [`docs/verification.md`](../../docs/verification.md) for four independent ways to re-derive these results yourself (from a one-curl FastNEAR check to a full archival re-fetch).",
   );
   lines.push("");
   lines.push("## Invariants at a glance");

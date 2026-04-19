@@ -9,6 +9,16 @@
 // verification handle via public block explorers; the local snapshot is
 // the convenience handle.
 //
+// This function has two callers:
+//   1. The run pipeline (recipes/*.ts) — writes a fresh snapshot as
+//      the original capture.
+//   2. The auditor (audit.ts) — calls it on-demand when a run's
+//      onchain.json is missing, then writes the result back to the
+//      same path. This is the mechanism behind docs/verification.md
+//      "path 4": a reader can `rm *.onchain.json` and re-audit to
+//      independently reconstruct the snapshot from archival, proving
+//      the committed bytes match the chain's current view.
+//
 // The sibling smart-account-contract uses "snapshot" for the on-chain
 // view frozen at a point in time; we borrow that vocabulary here so the
 // two repos read cleanly together.

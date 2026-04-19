@@ -130,9 +130,10 @@ testnet sandbox:
   YieldId was registered.
 
 All four PASS on both testnet and mainnet, side-by-side in
-[`../artifacts/comparative.md`](../artifacts/comparative.md). The
-verification paths (explorer, offline re-audit, archival re-fetch)
-are in [`verification.md`](verification.md).
+[`../artifacts/comparative.md`](../artifacts/comparative.md). Four
+independent verification paths (explorer, one-curl FastNEAR read,
+offline re-audit, archival re-fetch) are in
+[`verification.md`](verification.md).
 
 ## Could `intents.near` use yield/resume?
 

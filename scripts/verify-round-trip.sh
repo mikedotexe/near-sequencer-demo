@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Local self-test of docs/verification.md path 3 (archival re-fetch).
+# Local self-test of docs/verification.md path 4 (archival re-fetch).
 #
 # Deletes every `run-NN.onchain.json` under `artifacts/<network>/`, runs
 # the auditor (which falls through to FastNEAR archival, reconstructs
 # each snapshot, and re-runs the four invariants), then asserts that
 # the regenerated `audit.json` files are byte-identical to the committed
-# reference. A passing run is the strongest form of path-3 self-
+# reference. A passing run is the strongest form of path-4 self-
 # verification: it confirms the receipt DAGs committed to the repo
 # actually match what the chain says today, per the four
 # NEP-519 invariants documented in docs/invariants.md.

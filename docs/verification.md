@@ -51,13 +51,14 @@ possible — see [`intents-near.md`](intents-near.md). For the full
 derivation of each invariant (NEP-519 semantics + observable
 signature + code pointer), see [`invariants.md`](invariants.md).
 
-## Three independent paths, in order of rigor
+## Four independent paths, in order of rigor
 
 The repository commits two full artifact trees — `artifacts/testnet/`
 and `artifacts/mainnet/` — each containing a frozen receipt-DAG
 snapshot per run plus the auditor's parsed results. A reader who
-wants to confirm the four invariants without trusting us has three
-independent paths, in increasing order of rigor and effort.
+wants to confirm the four invariants without trusting us has four
+independent paths, in increasing order of rigor and effort. The
+first two require no install — just a browser or `curl`.
 
 ## Path 1 — Eyeball via block explorer (2 min)
 
@@ -88,7 +89,114 @@ What to check once the explorer page loads:
 This path trusts nearblocks to be honest but trusts nothing about
 this repo.
 
-## Path 2 — Offline machine re-audit from committed snapshots (5 min)
+## Path 2 — One-curl verification via FastNEAR (3 min, no install)
+
+If you don't want to trust nearblocks' indexer, you can go one layer
+closer to the source: FastNEAR runs public archival infrastructure
+that serves the protocol-native RPC (and a REST wrapper) without
+authentication for casual reads. One `curl` command against a
+mainnet tx hash from this repo surfaces every observable the four
+invariants depend on.
+
+We'll use the mainnet timeout run — `recipe-timeout/run-01`,
+tx `2AnThBJPY8axMobw6DkA8QBYj1k8edm5QHcpo5dwMQ8R` — because it's
+the cleanest single-tx proof: one yield, no resume, the callback
+fires on the 200-block budget.
+
+### Option A — Raw JSON-RPC (protocol-native)
+
+```sh
+curl -sS https://archival-rpc.mainnet.fastnear.com \
+     -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"EXPERIMENTAL_tx_status",
+          "params":{"tx_hash":"2AnThBJPY8axMobw6DkA8QBYj1k8edm5QHcpo5dwMQ8R",
+                    "sender_account_id":"mike.near","wait_until":"FINAL"}}'
+```
+
+This is exactly what `scripts/src/snapshot.ts` calls under the
+hood — so the response you get is the same data the committed
+`run-01.onchain.json` was built from.
+
+### Option B — REST Transactions API (friendlier)
+
+FastNEAR also exposes a
+[REST wrapper](https://docs.fastnear.com) that flattens the receipt
+DAG into a list with logs inline:
+
+```sh
+curl -sS -X POST https://tx.main.fastnear.com/v0/transactions \
+     -H 'content-type: application/json' \
+     -d '{"tx_hashes":["2AnThBJPY8axMobw6DkA8QBYj1k8edm5QHcpo5dwMQ8R"]}' \
+  | python3 -c '
+import sys, json
+t = json.load(sys.stdin)["transactions"][0]
+print("yield tx:    block", t["execution_outcome"]["block_height"])
+for r in t["receipts"]:
+    oc = r["execution_outcome"]
+    print("  receipt:    block", oc["block_height"],
+          " executor=" + oc["outcome"]["executor_id"])
+    for log in oc["outcome"].get("logs", []):
+        if log.startswith("trace:"):
+            print("    ", log[:150])
+'
+```
+
+Expected output — each line surfaces a different invariant:
+
+```
+yield tx:    block 194707791
+  receipt:    block 194707792  executor=recipes.mike.near
+     trace:{"ev":"recipe_yielded","recipe":"timeout","name":"r01-1776618217314","block_ts_ms":1776618218372}
+  receipt:    block 194707993  executor=recipes.mike.near
+     trace:{"ev":"recipe_resolved_err","recipe":"timeout","name":"r01-1776618217314","reason":"Failed","block_ts_ms":1776618336632}
+  receipt:    block 194707994  executor=mike.near
+```
+
+What each line proves:
+
+- **DAG-placement.** Both `recipe_yielded` and `recipe_resolved_err`
+  appear in the *same* tx's receipt list, even though no resume was
+  ever sent. The callback receipt was scheduled at yield time and
+  fires from the original tx's DAG.
+- **Budget.** `194707993 − 194707791 = 202` blocks — inside the
+  `[200, 205]` invariant window, NEP-519's stated 200-block budget
+  plus small chunk-inclusion slack.
+- **Shard-placement.** Both callback receipts have
+  `executor=recipes.mike.near`. Under NEAR's shard-per-receiver
+  semantics, that's equivalent to "the callback executed on the
+  contract's home shard" — regardless of which shard a resume tx
+  might arrive from.
+- **Atomicity** isn't exercised by the timeout path; re-run the
+  same curl on a `recipe-handoff/run-claim-*` tx hash to see it.
+  The committed
+  [`artifacts/mainnet/recipe-handoff/run-claim-01.raw.json`](../artifacts/mainnet/recipe-handoff/run-claim-01.raw.json)
+  is `3U4QqbFWX9G9wYarRMbTS7ur8TLEW4M4x71Gxy9R64Kb`. The response
+  includes a receipt whose `executor=bob.mike.near` and whose
+  `receipt.Action.actions[0].Transfer.deposit = 10000000000000000000000`
+  (0.01 NEAR) — that's the atomic value-transfer the handoff recipe
+  claims, observable as a single chain fact.
+
+### Authentication (optional)
+
+The free tier is enough for one-off verification. If you hit rate
+limits doing the full 10-run sweep, create a key at
+[`dashboard.fastnear.com`](https://dashboard.fastnear.com) and add
+it to either curl as:
+
+```sh
+curl ... -H 'Authorization: Bearer $FASTNEAR_API_KEY' ...
+# or, equivalently:
+curl 'https://archival-rpc.mainnet.fastnear.com?apiKey=$FASTNEAR_API_KEY' ...
+```
+
+One key works across `rpc.{mainnet,testnet}.fastnear.com`,
+`archival-rpc.{mainnet,testnet}.fastnear.com`, and the
+`tx.{main,test}.fastnear.com` REST endpoints.
+
+This path trusts FastNEAR's archival node to be honest but nothing
+else — no indexer, no clone, no local code execution.
+
+## Path 3 — Offline machine re-audit from committed snapshots (5 min)
 
 The committed `run-NN.onchain.json` files are full receipt-DAG
 snapshots — blocks, chunks, receipt outcomes — captured at run time.
@@ -105,7 +213,7 @@ NEAR_NETWORK=mainnet ./scripts/demo.sh audit chained
 NEAR_NETWORK=mainnet ./scripts/demo.sh audit handoff
 ```
 
-No `.env` / API key required for path 2 — the auditor prefers the
+No `.env` / API key required for path 3 — the auditor prefers the
 cached `run-NN.onchain.json` over any RPC fetch (see `snapshotSource`
 in [`scripts/src/audit.ts`](../scripts/src/audit.ts)), so the four
 commands run with no network access. Each prints a one-line
@@ -128,10 +236,10 @@ is byte-exact and deterministic.
 This path trusts nothing about either network — everything verifiable
 from data already in the repo.
 
-## Path 3 — Fully independent re-fetch from archival RPC (10 min)
+## Path 4 — Fully independent re-fetch from archival RPC (10 min)
 
-Path 2 verifies our snapshots are internally consistent, but does
-not verify those snapshots match reality. Path 3 does. Delete the
+Path 3 verifies our snapshots are internally consistent, but does
+not verify those snapshots match reality. Path 4 does. Delete the
 committed snapshots and force the auditor to re-fetch from FastNEAR's
 mainnet archival endpoint:
 
@@ -174,8 +282,10 @@ This repo ships with this exact check passing — a full `rm *.onchain.json`
 any of the 10 committed `audit.json` files (and two-field drift in
 each `onchain.json` as described above). That's the "nothing to
 trust" proof: the four invariants derived from freshly-fetched
-archival data match the four committed invariant results exactly.
-All four invariants must also print `PASS` in the command output.
+archival data match the four committed invariant results exactly,
+against the same archival endpoints (`archival-rpc.{mainnet,testnet}.fastnear.com`)
+that power path 2's single-curl verification. All four invariants
+must also print `PASS` in the command output.
 
 If you want a rougher onchain-level sanity check,
 `jq 'del(.snapshotAt, .latestBlockAtSnapshotHeight)' run-NN.onchain.json`
@@ -187,16 +297,22 @@ covers the recent past; if you try this long after the commit date,
 some receipts may fall out of the archive (the auditor reports
 `snapshotStatus.overall = partial` in that case and emits which
 block/chunk fetches failed). If retention has expired, fall back to
-path 1 or 2, or point the pipeline at a paid archival provider by
-setting `RPC_AUDIT=<your-archival-endpoint>` in `.env`.
+paths 1–3, or point the pipeline at a paid archival provider by
+setting `RPC_AUDIT=<your-archival-endpoint>` in `.env`. Any
+NEP-compliant archival node serves the same `EXPERIMENTAL_tx_status`
+output, so the switch is drop-in.
 
 **Optional: higher rate limits.** The free tier is enough for a
 ~10-run re-fetch, but if you hit rate limits, create a FastNEAR key at
-[dashboard.fastnear.com](https://dashboard.fastnear.com) and set
-`FASTNEAR_API_KEY=...` in `.env`. One key works for both RPC and
-archival.
+[`dashboard.fastnear.com`](https://dashboard.fastnear.com) and set
+`FASTNEAR_API_KEY=...` in `.env`. One key works across
+`rpc.{mainnet,testnet}.fastnear.com`,
+`archival-rpc.{mainnet,testnet}.fastnear.com`, and the REST
+`tx.{main,test}.fastnear.com` endpoints — see
+[`docs.fastnear.com`](https://docs.fastnear.com) for the full
+endpoint catalog and authentication details.
 
-### Automating path 3 as a self-test
+### Automating path 4 as a self-test
 
 [`scripts/verify-round-trip.sh`](../scripts/verify-round-trip.sh)
 packages the whole sequence — `rm *.onchain.json`, re-audit, diff-
@@ -216,7 +332,7 @@ wall-clock fields (`snapshotAt`, `latestBlockAtSnapshotHeight`).
 On exit (success or failure) it restores the committed tree via
 `git checkout` so you can re-run cleanly. Use it whenever you want
 to confirm that the committed snapshots still match chain reality
-— a passing run is the strongest form of path-3 evidence.
+— a passing run is the strongest form of path-4 evidence.
 
 Not part of CI: hitting live archival on every PR is inappropriate
 (cost + rate limits + retention window makes it an unreliable
@@ -242,7 +358,7 @@ atomic tx — see
 [`docs/mainnet-readiness.md#secure-init-atomic-createdeployinit`](mainnet-readiness.md#secure-init--atomic-createdeployinit).)
 
 Three steps. All commands run from the repo root; the only extra
-prerequisite beyond path 2's `npm install` is Rust + the wasm32
+prerequisite beyond path 3's `npm install` is Rust + the wasm32
 target, which the pinned `rust-toolchain.toml` will install on first
 `cargo build`.
 
@@ -295,41 +411,49 @@ two contributors both running `cargo build` under this commit's
 `rust-toolchain.toml` will produce byte-identical wasm (`6816f8c5…`),
 confirming the source-to-artifact relationship is deterministic for
 everyone who builds from here forward. If you want to know "does the
-on-chain contract behave like this source does," paths 1/2/3 above
+on-chain contract behave like this source does," paths 1–4 above
 already answer that — the four invariants are the load-bearing
 proof surface, and the wasm check is corroborative only.
 
 ## What if something doesn't match
 
-If any of the three paths disagrees with the committed artifacts, the
+If any of the four paths disagrees with the committed artifacts, the
 bug is in the repo, not in the chain. Open an issue with:
 
-- Which path (1, 2, or 3) diverged.
+- Which path (1, 2, 3, or 4) diverged.
 - The specific run/recipe.
-- A copy of the diff (for path 2/3) or a screenshot (for path 1).
+- A copy of the diff (for path 3/4), a raw-response dump (for path 2),
+  or a screenshot (for path 1).
 
 The invariants are protocol-correctness claims — a single divergence
 would be a significant finding about either the repo or NEP-519
 itself.
 
-## Why three paths
+## Why four paths
 
 Each path has a different trust model and different failure mode:
 
-| Path | Trusts | Breaks if | Time |
-|------|--------|-----------|------|
-| 1. Eyeball | nearblocks indexer | indexer wrong *and* our snapshot coincidentally matches the wrong view | 2 min |
-| 2. Offline re-audit | nothing external | our snapshots internally fabricated | 5 min |
-| 3. Archival re-fetch | FastNEAR archive | archive retention window expires | 10 min |
+| Path | Trusts | Install | Breaks if | Time |
+|------|--------|---------|-----------|------|
+| 1. Explorer eyeball | nearblocks indexer | browser only | indexer wrong *and* our snapshot coincidentally matches the wrong view | 2 min |
+| 2. One-curl via FastNEAR | FastNEAR archival node | curl + (optional) python3 | archival node dishonest *and* our committed tx hash happens to match a fabricated response | 3 min |
+| 3. Offline re-audit | nothing external | git clone + Node 18+ | our committed snapshots are internally fabricated | 5 min |
+| 4. Archival re-fetch | FastNEAR archival node | git clone + Node 18+ | archive retention window expires before you run it | 10 min |
 
-Combined, the three paths make the claim
-"four invariants hold on every run, on both networks" verifiable with
-essentially no remaining trust in the repo's good faith.
+Paths 2 and 4 share the same trust root (FastNEAR archival) but
+stake different assertions on it: path 2 says "one committed tx
+hash matches a live response," path 4 says "all 10 committed
+snapshots byte-match live responses, and the auditor run against
+them produces identical invariant results." Combined, the four
+paths make the claim "four invariants hold on every run, on both
+networks" verifiable with essentially no remaining trust in the
+repo's good faith.
 
 ## What a green verification proves
 
-If all three paths complete cleanly — or even just path 2 — you have
-confirmed, on real NEAR chain data, that:
+If any of the four paths completes cleanly — and especially if
+paths 3 and 4 both do — you have confirmed, on real NEAR chain
+data, that:
 
 1. A NEAR contract scheduled a callback receipt at block `N`, then
    its transaction completed and left that receipt pending.

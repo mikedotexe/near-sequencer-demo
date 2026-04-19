@@ -384,8 +384,9 @@ networks. Notable data points from the mainnet capture:
 
 See [`mainnet-readiness.md`](mainnet-readiness.md) for the bootstrap
 runbook, expected cost, and state-hygiene analysis;
-[`verification.md`](verification.md) for three independent-verification
+[`verification.md`](verification.md) for four independent-verification
 paths a reader can run to confirm these numbers without trusting this
-repo. The invariant infrastructure is network-agnostic — no code
-changes were needed for mainnet beyond the `NEAR_NETWORK=mainnet`
-env var.
+repo — from a one-curl check against FastNEAR's archival RPC to a
+full archival re-fetch round-trip. The invariant infrastructure is
+network-agnostic — no code changes were needed for mainnet beyond the
+`NEAR_NETWORK=mainnet` env var.

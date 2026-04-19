@@ -24,9 +24,9 @@ primitive.
   value), **Shard-placement** (callbacks execute on the contract's
   home shard regardless of which shard the resume tx was signed
   from). Derivation of each in
-  [`docs/invariants.md`](docs/invariants.md); three
-  independent-verification paths (explorer / offline re-audit /
-  archival re-fetch) in
+  [`docs/invariants.md`](docs/invariants.md); four
+  independent-verification paths (explorer / one-curl FastNEAR /
+  offline re-audit / archival re-fetch) in
   [`docs/verification.md`](docs/verification.md).
 - **Mental model.** The yield tx is the root of a receipt tree;
   resume and timeout are both data-delivery ops against an already-
@@ -252,11 +252,14 @@ timeout path is the same: when the budget expires, the runtime
 delivers `PromiseError` to the receipt it already has.
 
 The audit pipeline empirically checks four invariants on every
-snapshotted run and rolls their PASS/VIOLATED status into
-[`artifacts/testnet/report.md`](artifacts/testnet/report.md)'s
-"Invariants at a glance" header. `scripts/demo.sh audit` exits
-non-zero if any invariant is violated, so CI (and a human running the
-pipeline by hand) learns immediately rather than from eyeballing JSON.
+snapshotted run and rolls their PASS/VIOLATED status into the
+"Invariants at a glance" header of each network's report
+([testnet](artifacts/testnet/report.md),
+[mainnet](artifacts/mainnet/report.md)), with the side-by-side grid
+in [`artifacts/comparative.md`](artifacts/comparative.md).
+`scripts/demo.sh audit` exits non-zero if any invariant is violated,
+so CI (and a human running the pipeline by hand) learns immediately
+rather than from eyeballing JSON.
 
 1. **DAG-placement.** Every trace event emitted by callback code —
    `recipe_resolved_ok`, `recipe_resolved_err`, `recipe_dispatched`,
@@ -310,12 +313,15 @@ scripts/demo.sh audit basic && scripts/demo.sh audit timeout \
 scripts/demo.sh aggregate && scripts/demo.sh report
 ```
 
-Artifacts land under `artifacts/testnet/recipe-{basic,timeout,chained}/`:
-each run produces a `run-NN.raw.json` (tx hashes + timing), a
+Artifacts land under
+`artifacts/<network>/recipe-{basic,timeout,chained,handoff}/` (where
+`<network>` is `testnet` or `mainnet`, per `NEAR_NETWORK`): each run
+produces a `run-NN.raw.json` (tx hashes + timing), a
 `run-NN.onchain.json` (full receipt DAGs + blocks + chunks), and after
 audit a `run-NN.audit.json` (parsed lifecycle summary). The final
-`report.md` has a table per recipe linking to every tx on
-[nearblocks.io](https://testnet.nearblocks.io).
+`report.md` has a table per recipe linking to every tx on the
+appropriate explorer — `testnet.nearblocks.io` for testnet runs,
+`nearblocks.io` for mainnet.
 
 To inspect the DAG-placement of trace events for a single snapshotted run
 (the reproducibility hook for the "yield tx is the root of the receipt

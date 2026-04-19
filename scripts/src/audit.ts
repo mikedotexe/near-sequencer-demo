@@ -24,7 +24,9 @@
 // A violation of any invariant prints a loud `!!` stderr line and
 // exits non-zero. See docs/invariants.md for the per-invariant
 // derivation from NEP-519 semantics, and docs/verification.md for
-// three independent verification paths a reader can run locally.
+// four independent verification paths a reader can run locally
+// (browser eyeball, one-curl FastNEAR read, offline re-audit, full
+// archival re-fetch).
 //
 // The per-recipe summary shape differs because each recipe has
 // different observable moments:
@@ -114,7 +116,7 @@ function findTraceEvents(logs: string[], recipe: RecipeName, name: string): Trac
 // `run-NN.raw.json`. When the onchain.json is absent, the auditor rebuilds it
 // by calling `snapshotOnChain(...)` against the archival RPC (the same flow
 // that wrote it originally) and writes the result back to the same path.
-// This is the critical behavior that powers docs/verification.md's "path 3"
+// This is the critical behavior that powers docs/verification.md's "path 4"
 // — a reader can `rm *.onchain.json` and re-audit to independently
 // reconstruct the snapshots from archival without trusting the committed
 // snapshot bytes.
@@ -179,7 +181,7 @@ async function buildSnapshotSource(raw: RawArtifact, recipeDir: string): Promise
     return localSource(snapshot);
   }
   // Missing snapshot — rebuild from archival RPC and persist. See the
-  // module-level comment above; docs/verification.md path 3 depends on
+  // module-level comment above; docs/verification.md path 4 depends on
   // this being the single auditor entry point.
   process.stderr.write(
     `[audit]   no snapshot at ${onchainPath}; re-fetching from archival RPC...\n`,
