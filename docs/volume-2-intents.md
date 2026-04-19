@@ -219,10 +219,12 @@ extends by one recipe entry; no new mechanism needed.
 
 ## New invariants Volume 2 requires
 
-Volume 1's three invariants (DAG-placement, budget, atomicity) all
-still hold for Recipe 5, with atomicity expanding to cover the
-intent's value transfer. But the solver-contention shape introduces
-two new invariants that didn't need to exist before:
+Volume 1's four invariants (DAG-placement, Budget, Atomicity,
+Shard-placement) all still hold for Recipe 5, with Atomicity
+expanding to cover the intent's value transfer and Shard-placement
+applying the same way (the intent contract still has a home shard).
+But the solver-contention shape introduces two new invariants that
+didn't need to exist before:
 
 ### 4. Exactly-one-winner
 

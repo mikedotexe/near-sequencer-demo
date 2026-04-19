@@ -1,12 +1,42 @@
-// Per-recipe audits. Each audit reads a run's raw + onchain.json files and
-// produces a lifecycle summary as run-NN.audit.json. The shape differs per
-// recipe because each recipe has different observable moments:
+// Per-recipe audits + the four NEP-519 invariants the demo proves.
+//
+// Each audit reads a run's raw + onchain.json files and produces a
+// lifecycle summary as run-NN.audit.json. The audit is also where the
+// four machine-checked invariants are enforced — the substantive proof
+// that the `recipes` contract achieves contract-controlled sequential
+// receipt execution across block boundaries on NEAR mainnet:
+//
+//   DAG-placement    (computeDagPlacement)  — pause is real:
+//     callback trace events live in the YIELD tx's DAG, not the
+//     resume tx's, because the callback receipt is scheduled at yield
+//     time and the runtime only delivers a payload to it on resume.
+//   Budget           (checkBudget)          — wait is bounded:
+//     observed yield→callback block delta ∈ [200, 205] on timeout
+//     paths, NEP-519's stated budget plus small inclusion slack.
+//   Atomicity        (checkAtomicity)       — resume composes with value:
+//     Recipe 4's callback atomically emits a Transfer to the
+//     yield-time-nominated recipient, with SuccessValue outcome.
+//   Shard-placement  (computeShardPlacement) — route-back is real:
+//     callback-emitting receipts execute on the contract's home
+//     shard regardless of the resume tx's origin shard; observed
+//     via `outcome.executor_id == recipes contract`.
+//
+// A violation of any invariant prints a loud `!!` stderr line and
+// exits non-zero. See docs/invariants.md for the per-invariant
+// derivation from NEP-519 semantics, and docs/verification.md for
+// three independent verification paths a reader can run locally.
+//
+// The per-recipe summary shape differs because each recipe has
+// different observable moments:
 //
 //   basic   — yielded, resumed, resolved_ok
 //   timeout — yielded, resolved_err (after block-scan to find callback)
 //   chained — yielded, resumed, dispatched, callback_observed, resolved_ok
+//   handoff — yielded + handoff_offered, (optional) resumed,
+//             on claim: resolved_ok + handoff_released + Transfer receipt
+//             on timeout: resolved_err + handoff_refunded + refund receipt
 //
-// All three share: parsed trace events keyed by event name + name, plus
+// All four share: parsed trace events keyed by event name + name, plus
 // block-height deltas between observable moments. The aggregate + report
 // layers consume these to build the recipe-book artifact.
 

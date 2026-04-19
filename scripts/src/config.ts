@@ -95,9 +95,12 @@ export const CREDENTIALS_DIR = process.env.NEAR_CREDENTIALS_DIR ?? join(homedir(
 export const NETWORK_CREDENTIALS_DIR = join(CREDENTIALS_DIR, NEAR_NETWORK);
 
 export const REPO_ROOT = new URL("../../", import.meta.url).pathname.replace(/\/$/, "");
-// Artifacts partition by network. The recipe book is testnet-only by design;
-// the mainnet dir exists only so stray mainnet experiments don't pollute the
-// testnet corpus.
+// Artifacts partition by network. Testnet and mainnet are both
+// first-class targets (see docs/mainnet-readiness.md); each network
+// gets its own artifact subtree — artifacts/testnet/ and
+// artifacts/mainnet/ — so their receipt DAGs, audits, and reports
+// stay cleanly separable. The cross-network comparison lives in
+// artifacts/comparative.md.
 export const ARTIFACTS_ROOT = join(REPO_ROOT, "artifacts");
 export const ARTIFACTS_DIR = join(ARTIFACTS_ROOT, NEAR_NETWORK);
 

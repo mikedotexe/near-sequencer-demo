@@ -88,6 +88,12 @@ If these three commands pass, the repo is in a shippable state.
 
 ## The four recipes
 
+Each recipe exercises a different facet of the sequencing primitive:
+Recipe 1 is the minimal *pause-and-resume* shape; Recipe 2 is
+*pause-and-wait-with-a-deadline*; Recipe 3 is *pause, resume,
+dispatch downstream, and settle on the downstream's result*; Recipe 4
+is *pause, carry value, settle atomically on whichever ending fires*.
+
 All four method groups live in
 [`contracts/recipes/src/lib.rs`](contracts/recipes/src/lib.rs). Recipes
 1–3 share a `yields: BTreeMap<String, YieldId>` for cross-tx bookkeeping;

@@ -1,6 +1,26 @@
 //! NEP-519 yield/resume recipe book.
 //!
-//! Four self-contained recipes, each a method-pair on this one contract.
+//! This contract demonstrates **contract-controlled sequential receipt
+//! execution across block boundaries** using NEP-519. Unlike
+//! `Promise.then()` chains (where the runtime drives the continuation
+//! the moment a downstream receipt resolves) or synchronous batching
+//! (the `intents.near`-style "all work in one tx" pattern), yield/resume
+//! lets the contract itself dictate the pause: `Promise::new_yield`
+//! schedules a callback receipt that sits in the yielded-receipts queue
+//! until `yield_id.resume(payload)` lands in a later tx, or the
+//! 200-block budget elapses and the runtime delivers `PromiseError` to
+//! the same already-scheduled receipt. The callback fires exactly once,
+//! either way.
+//!
+//! The four invariants in `docs/invariants.md` are the machine-checked
+//! proof that NEAR mainnet honors this pause-and-resume request as
+//! specified; committed artifacts under `artifacts/{testnet,mainnet}/`
+//! are the bytes-on-chain evidence. For the architectural contrast with
+//! `intents.near`'s synchronous batching approach, see
+//! `docs/intents-near.md`.
+//!
+//! Four self-contained recipes, each a method-pair on this one contract,
+//! exercise different facets of the sequencing primitive.
 //! Recipes 1–3 share a BTreeMap of outstanding `YieldId`s keyed by
 //! `"{recipe}:{name}"`. Recipe 4 (handoff) uses its own `handoffs` map
 //! because it carries additional metadata (the nominated recipient, for

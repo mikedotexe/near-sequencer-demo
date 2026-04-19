@@ -1,5 +1,6 @@
-// Shared scaffolding for the three recipe flows: artifact directory
-// management, snapshot-and-write pass, poll helpers.
+// Shared scaffolding for the four recipe flows (basic, timeout, chained,
+// handoff): artifact directory management, snapshot-and-write pass,
+// poll helpers.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

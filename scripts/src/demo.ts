@@ -31,7 +31,7 @@ function usage(): void {
       "usage: demo.sh <subcommand> [args]",
       "",
       "environment:",
-      "  NEAR_NETWORK=testnet|mainnet  (default: testnet; recipe book is testnet-only)",
+      "  NEAR_NETWORK=testnet|mainnet  (default: testnet; mainnet is first-class — see docs/mainnet-readiness.md)",
       "",
       "subcommands:",
       "  build                                cargo build --release --target wasm32-unknown-unknown",
