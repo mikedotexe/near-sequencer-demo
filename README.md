@@ -33,6 +33,14 @@ primitive.
   scheduled callback receipt. That one sentence makes all four
   recipes cohere — §[Four invariants, machine-checked on every
   run](#four-invariants-machine-checked-on-every-run) below.
+- **Why this matters.** NEAR's production intents contract
+  (`intents.near`) processes all work synchronously in a single tx
+  batch; that's one answer to multi-step coordination. Yield/resume
+  is a different answer: **contract-controlled sequential receipt
+  execution across block boundaries** — the contract pauses itself,
+  waits for a signal that didn't exist at yield time, and resumes
+  deterministically. See [`docs/intents-near.md`](docs/intents-near.md)
+  for the architectural contrast grounded in live mainnet tx hashes.
 - **Run it or read it.** `NEAR_NETWORK=testnet ./scripts/demo.sh all`
   reproduces the full pipeline on testnet;
   `NEAR_NETWORK=mainnet ./scripts/demo.sh all` reproduces on mainnet
