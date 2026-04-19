@@ -196,6 +196,32 @@ setting `RPC_AUDIT=<your-archival-endpoint>` in `.env`.
 `FASTNEAR_API_KEY=...` in `.env`. One key works for both RPC and
 archival.
 
+### Automating path 3 as a self-test
+
+[`scripts/verify-round-trip.sh`](../scripts/verify-round-trip.sh)
+packages the whole sequence — `rm *.onchain.json`, re-audit, diff-
+check, restore — into one command:
+
+```sh
+NEAR_NETWORK=mainnet ./scripts/verify-round-trip.sh
+```
+
+It refuses to run if `artifacts/<network>/` has uncommitted changes
+(so prior local edits can't be mistaken for round-trip failure),
+deletes every committed `onchain.json`, re-runs the four audits
+forcing archival re-fetch, asserts that every regenerated
+`audit.json` is byte-identical to the committed version, and
+asserts that the `onchain.json` drift is confined to the two
+wall-clock fields (`snapshotAt`, `latestBlockAtSnapshotHeight`).
+On exit (success or failure) it restores the committed tree via
+`git checkout` so you can re-run cleanly. Use it whenever you want
+to confirm that the committed snapshots still match chain reality
+— a passing run is the strongest form of path-3 evidence.
+
+Not part of CI: hitting live archival on every PR is inappropriate
+(cost + rate limits + retention window makes it an unreliable
+gate). It's a local self-check.
+
 ## Wasm verification — prove the deployed contract matches this repo's source
 
 The per-network [`deploys.json`](../artifacts/mainnet/deploys.json)
@@ -216,16 +242,17 @@ atomic tx — see
 [`docs/mainnet-readiness.md#secure-init-atomic-createdeployinit`](mainnet-readiness.md#secure-init--atomic-createdeployinit).)
 
 Three steps. All commands run from the repo root; the only extra
-prerequisite beyond path 2's `npm install` is Rust + the wasm32 target
-(`rustup target add wasm32-unknown-unknown`).
+prerequisite beyond path 2's `npm install` is Rust + the wasm32
+target, which the pinned `rust-toolchain.toml` will install on first
+`cargo build`.
 
 **1. Build the wasm locally from this commit and hash it.**
 
 ```sh
 cargo build --release --target wasm32-unknown-unknown -p recipes
 shasum -a 256 target/wasm32-unknown-unknown/release/recipes.wasm
-# → 891c9bbecbdb14f5fc6f891315ea9004677b5b3bf35aa106164fdd658a8033ff
-#   (matches wasmSha256 in artifacts/mainnet/deploys.json)
+# → 6816f8c5025093a6e48eeec1173270f188d7e5dba46c829e88e7b7ccd0f05c47
+#   (reproducible under rust-toolchain.toml's pinned stable channel)
 ```
 
 **2. Convert the hex digest to base58 so it's comparable with NEAR's
@@ -236,11 +263,10 @@ shasum -a 256 target/wasm32-unknown-unknown/release/recipes.wasm
 NODE_PATH=./scripts/node_modules node -e '
   const bs58 = require("bs58"); const m = bs58.default || bs58;
   console.log(m.encode(Buffer.from(process.argv[1], "hex")))
-' 891c9bbecbdb14f5fc6f891315ea9004677b5b3bf35aa106164fdd658a8033ff
-# → AEEA3kTGzrktu8N2T5pFVr7KBHLekznkPA2SCVev8SVU
+' 6816f8c5025093a6e48eeec1173270f188d7e5dba46c829e88e7b7ccd0f05c47
 ```
 
-**3. Fetch the live `code_hash` from mainnet RPC and compare:**
+**3. Fetch the live `code_hash` from mainnet RPC:**
 
 ```sh
 curl -s https://rpc.mainnet.fastnear.com -H "content-type: application/json" -d '{
@@ -250,16 +276,28 @@ curl -s https://rpc.mainnet.fastnear.com -H "content-type: application/json" -d 
 # → AEEA3kTGzrktu8N2T5pFVr7KBHLekznkPA2SCVev8SVU
 ```
 
-Matching bytes = the deployed contract was compiled from this repo's
-source at this commit.
+**What to expect.** The hash printed in step 2 is
+`81KiafiZRf3xU56FgJt29J3U4d6eaBj4jbneqrDj8x5k` (the base58 of
+`6816f8c5…`), while the on-chain `code_hash` at step 3 is
+`AEEA3kTGzrktu8N2T5pFVr7KBHLekznkPA2SCVev8SVU`
+(the base58 of `891c9bbe…`). These will not match —
+[`deploys.json`](../artifacts/mainnet/deploys.json) records
+`wasmSha256: 891c9bbe…` as the hash of the wasm that was uploaded to
+`recipes.mike.near` when this repo was first deployed to mainnet;
+that upload happened before `rust-toolchain.toml` pinned the
+toolchain, on whatever rustup default was active at the time
+(nightly). A fresh build under the pin is its own reproducible
+artifact going forward; it isn't expected to match a pre-pin
+deploy's bytes.
 
-**Reproducibility caveat.** Rust + cargo builds are not bit-reproducible
-by default across machines — differences in linker, `CARGO_HOME`, build
-paths, and toolchain version all perturb the bytes. The deploy
-referenced above was built with stable rust + near-sdk 5.26.1 (pinned in
-`Cargo.toml`). If the hash doesn't match but the on-chain behavior
-does, paths 1/2/3 still confirm the invariants — the wasm check is
-additional corroboration, not a prerequisite.
+**Using the wasm hash anyway.** The check that IS repeatable today:
+two contributors both running `cargo build` under this commit's
+`rust-toolchain.toml` will produce byte-identical wasm (`6816f8c5…`),
+confirming the source-to-artifact relationship is deterministic for
+everyone who builds from here forward. If you want to know "does the
+on-chain contract behave like this source does," paths 1/2/3 above
+already answer that — the four invariants are the load-bearing
+proof surface, and the wasm check is corroborative only.
 
 ## What if something doesn't match
 

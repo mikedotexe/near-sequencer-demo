@@ -1,0 +1,18 @@
+[toolchain]
+# Pin stable + the wasm32 target so two contributors cloning this repo
+# and running `cargo build --release --target wasm32-unknown-unknown`
+# produce byte-identical wasm. Combined with the committed Cargo.lock
+# this gives reproducible contract builds across machines.
+#
+# Note on the committed deploy: the wasm currently live on
+# `recipes.mike.near` (sha256 891c9bbecbdb14f5fc6f891315ea9004677b5b3bf35aa106164fdd658a8033ff,
+# captured in artifacts/mainnet/deploys.json) was built before this pin
+# landed, with a different toolchain (local rustup default was nightly
+# at the time). A fresh build under this pin will not match that hash —
+# that's an unavoidable one-time artifact of the deploy's pre-pin
+# history, not a drift going forward. The four invariants
+# (docs/invariants.md) are the load-bearing proof surface; the wasm
+# hash is corroborative. See docs/verification.md for details.
+channel = "stable"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

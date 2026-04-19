@@ -50,17 +50,28 @@ jobs:
         working-directory: scripts
         run: npm test
 
-      - name: Verify invariants in committed report.md
+      - name: Verify invariants in committed report.md (both networks)
         run: |
           set -euo pipefail
-          report=artifacts/testnet/report.md
+          for network in testnet mainnet; do
+            report="artifacts/${network}/report.md"
+            test -f "$report" || { echo "missing $report"; exit 1; }
+            grep -Fq -- '- DAG-placement: **PASS**' "$report" \
+                || { echo "DAG-placement invariant line not PASS in $report"; exit 1; }
+            grep -Fq -- '- Budget (NEP-519 200-block timeout): **PASS**' "$report" \
+                || { echo "Budget invariant line not PASS in $report"; exit 1; }
+            grep -Fq -- '- Atomicity (Recipe 4): **PASS**' "$report" \
+                || { echo "Atomicity invariant line not PASS in $report"; exit 1; }
+            grep -Fq -- '- Shard-placement: **PASS**' "$report" \
+                || { echo "Shard-placement invariant line not PASS in $report"; exit 1; }
+            echo "all four invariant badges PASS in $report"
+          done
+
+      - name: Verify comparative report exists + shows dual-network PASS
+        run: |
+          set -euo pipefail
+          report=artifacts/comparative.md
           test -f "$report" || { echo "missing $report"; exit 1; }
-          grep -Fq -- '- DAG-placement: **PASS**' "$report" \
-              || { echo "DAG-placement invariant line not PASS in $report"; exit 1; }
-          grep -Fq -- '- Budget (NEP-519 200-block timeout): **PASS**' "$report" \
-              || { echo "Budget invariant line not PASS in $report"; exit 1; }
-          grep -Fq -- '- Atomicity (Recipe 4): **PASS**' "$report" \
-              || { echo "Atomicity invariant line not PASS in $report"; exit 1; }
-          grep -Fq -- '- Shard-placement: **PASS**' "$report" \
-              || { echo "Shard-placement invariant line not PASS in $report"; exit 1; }
-          echo "all four invariant badges PASS in $report"
+          grep -Fq -- 'All four invariants hold identically on both testnet and mainnet.' "$report" \
+              || { echo "comparative.md missing dual-network PASS headline"; exit 1; }
+          echo "comparative.md shows dual-network PASS"
