@@ -23,7 +23,7 @@ import {
   type ChunkResult,
   type TxStatusResult,
 } from "./rpc.js";
-import type { OnchainCapture } from "./capture.js";
+import type { OnchainSnapshot, SnapshotStatus } from "./snapshot.js";
 import type {
   RawArtifact,
   RawBasicArtifact,
@@ -78,20 +78,33 @@ function findTraceEvents(logs: string[], recipe: RecipeName, name: string): Trac
 }
 
 // ---------------------------------------------------------------------------
-// Capture source
+// Snapshot source
 // ---------------------------------------------------------------------------
 //
-// Prefer locally captured data; fall back to live RPC.
+// Prefer locally snapshotted data; fall back to live RPC.
 
-interface CaptureSource {
+interface SnapshotSource {
   kind: "onchain_json" | "live_rpc";
+  // Overall snapshot health propagated from onchain.json. For live_rpc
+  // sources we synthesize a "complete" status since failures would throw
+  // out of the audit path rather than being recorded.
+  snapshotStatus: SnapshotStatus;
   getTxByRole(role: string): TxStatusResult | null;
   getBlockByHash(hash: string): Promise<BlockResult | null>;
   getBlockByHeight(height: number): Promise<BlockResult | null>;
   getChunkByHash(hash: string): Promise<ChunkResult | null>;
 }
 
-function buildCaptureSource(raw: RawArtifact, recipeDir: string): CaptureSource {
+// Default for on-disk onchain.json files that predate the snapshotStatus
+// field. Treat absence as "complete" so we never falsely report failures.
+const COMPLETE_SNAPSHOT_STATUS: SnapshotStatus = {
+  overall: "complete",
+  txStatusFailures: [],
+  blockFailures: [],
+  chunkFailures: [],
+};
+
+function buildSnapshotSource(raw: RawArtifact, recipeDir: string): SnapshotSource {
   // Handoff writes mode-prefixed filenames (e.g. run-claim-01.onchain.json)
   // so claim/timeout runs can share the dir without collisions. Other
   // recipes use plain zero-padded runIndex.
@@ -101,21 +114,22 @@ function buildCaptureSource(raw: RawArtifact, recipeDir: string): CaptureSource 
       : raw.runIndex.toString().padStart(2, "0");
   const onchainPath = join(recipeDir, `run-${suffix}.onchain.json`);
   if (existsSync(onchainPath)) {
-    const capture = JSON.parse(readFileSync(onchainPath, "utf8")) as OnchainCapture;
-    return localSource(capture);
+    const snapshot = JSON.parse(readFileSync(onchainPath, "utf8")) as OnchainSnapshot;
+    return localSource(snapshot);
   }
   return liveSource(raw);
 }
 
-function localSource(capture: OnchainCapture): CaptureSource {
-  const blocksByHash = new Map(Object.entries(capture.blocks));
+function localSource(snapshot: OnchainSnapshot): SnapshotSource {
+  const blocksByHash = new Map(Object.entries(snapshot.blocks));
   const blocksByHeight = new Map<number, BlockResult>();
   for (const b of blocksByHash.values()) blocksByHeight.set(b.header.height, b);
-  const chunksByHash = new Map(Object.entries(capture.chunks));
+  const chunksByHash = new Map(Object.entries(snapshot.chunks));
   return {
     kind: "onchain_json",
+    snapshotStatus: snapshot.snapshotStatus ?? COMPLETE_SNAPSHOT_STATUS,
     getTxByRole(role) {
-      return capture.txStatus[role] ?? null;
+      return snapshot.txStatus[role] ?? null;
     },
     async getBlockByHash(hash) {
       const cached = blocksByHash.get(hash);
@@ -155,7 +169,7 @@ function localSource(capture: OnchainCapture): CaptureSource {
   };
 }
 
-function liveSource(raw: RawArtifact): CaptureSource {
+function liveSource(raw: RawArtifact): SnapshotSource {
   const txCache: Record<string, TxStatusResult | null> = {};
   // Pre-populate role -> tx hash mapping from the raw artifact.
   const roleToHash: Record<string, string> = {};
@@ -178,6 +192,7 @@ function liveSource(raw: RawArtifact): CaptureSource {
   const chunksByHash = new Map<string, ChunkResult>();
   return {
     kind: "live_rpc",
+    snapshotStatus: COMPLETE_SNAPSHOT_STATUS,
     getTxByRole(role) {
       // Synchronous accessor; live-RPC source fetches lazily on first
       // invocation by tracking a per-role cache keyed on hash.
@@ -241,13 +256,16 @@ function liveSource(raw: RawArtifact): CaptureSource {
 // DAG-placement invariant
 // ---------------------------------------------------------------------------
 //
+// Full derivation + rationale: ../../docs/invariants.md#1-dag-placement
+//
 // NEP-519 semantics: `Promise::new_yield` schedules the callback receipt at
 // yield time. `yield_id.resume(payload)` delivers a payload to that
 // already-scheduled receipt; it does NOT create a new one. The 200-block
 // timeout path is the same — the runtime delivers `PromiseError` to the
 // existing receipt. Consequence: all trace events emitted by callback code
-// (`recipe_resolved_*`, `recipe_dispatched`, `recipe_callback_observed`)
-// land in the YIELD tx's `receipts_outcome[]`, not the resume tx's.
+// (`recipe_resolved_*`, `recipe_dispatched`, `recipe_callback_observed`,
+// `handoff_released`, `handoff_refunded`) land in the YIELD tx's
+// `receipts_outcome[]`, not the resume tx's.
 //
 // The resume tx's DAG contains only `recipe_resumed` (emitted by the
 // resume method itself, which is an ordinary FunctionCall).
@@ -310,7 +328,7 @@ function expectedDagPlacement(
 }
 
 function findEventPlacement(
-  src: CaptureSource,
+  src: SnapshotSource,
   roles: TxRole[],
   recipe: RecipeName,
   name: string,
@@ -328,14 +346,14 @@ function findEventPlacement(
 }
 
 function computeDagPlacement(
-  src: CaptureSource,
+  src: SnapshotSource,
   recipe: RecipeName,
   name: string,
   opts?: { handoffMode?: "claim" | "timeout" },
 ): { placement: Record<string, TxRole | null>; violations: DagInvariantViolation[] } {
   const expected = expectedDagPlacement(recipe, opts);
-  // Which captured tx roles to scan. Timeout paths capture only the yield
-  // tx (no resume exists); everything else has both.
+  // Which snapshotted tx roles to scan. Timeout paths snapshot only the
+  // yield tx (no resume exists); everything else has both.
   const rolesToScan: TxRole[] =
     recipe === "timeout" || opts?.handoffMode === "timeout" ? ["yield"] : ["yield", "resume"];
   const placement: Record<string, TxRole | null> = {};
@@ -351,6 +369,156 @@ function computeDagPlacement(
 }
 
 // ---------------------------------------------------------------------------
+// Budget invariant (NEP-519 200-block timeout)
+// ---------------------------------------------------------------------------
+//
+// Full derivation + rationale: ../../docs/invariants.md#2-budget
+//
+// NEP-519 specifies a 200-block yield budget. When the budget elapses, the
+// runtime delivers `PromiseError` to the already-scheduled callback receipt,
+// which then executes in the next chunk-production slot. So the observed
+// yield→callback block delta is ~200 + a few blocks of execution latency.
+//
+// Bounds: [200, 205]. 200 = the protocol's stated budget. +5 upper slack
+// covers normal chunk-inclusion jitter and gives the callback receipt a
+// small window to land. A drift outside this range suggests either a
+// protocol-level change (budget bumped, block timing shifted) or a
+// snapshot that missed the callback's receipt outcome; either way the
+// reader should be told rather than the number rendered silently.
+
+export const BUDGET_LOWER_BLOCKS = 200;
+export const BUDGET_UPPER_BLOCKS = 205;
+
+export interface BudgetInvariantResult {
+  held: boolean;
+  // False when `observedBlocks` is null (the callback receipt wasn't
+  // located in the snapshot). Treated as "inconclusive" rather than
+  // "violated" so a missing snapshot doesn't fire a false alarm.
+  evaluable: boolean;
+  observedBlocks: number | null;
+  lowerBound: number;
+  upperBound: number;
+}
+
+export function checkBudget(blocks: number | null): BudgetInvariantResult {
+  if (blocks === null) {
+    return {
+      held: true,
+      evaluable: false,
+      observedBlocks: null,
+      lowerBound: BUDGET_LOWER_BLOCKS,
+      upperBound: BUDGET_UPPER_BLOCKS,
+    };
+  }
+  return {
+    held: blocks >= BUDGET_LOWER_BLOCKS && blocks <= BUDGET_UPPER_BLOCKS,
+    evaluable: true,
+    observedBlocks: blocks,
+    lowerBound: BUDGET_LOWER_BLOCKS,
+    upperBound: BUDGET_UPPER_BLOCKS,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Atomicity invariant (Recipe 4)
+// ---------------------------------------------------------------------------
+//
+// Full derivation + rationale: ../../docs/invariants.md#3-atomicity-recipe-4
+//
+// Recipe 4's central claim: the yield/resume primitive moves value
+// atomically. On claim, exactly `amountYocto` flows from the recipes
+// contract to the nominated recipient; on timeout, exactly `amountYocto`
+// flows back to the signer. We verify empirically by scanning the
+// snapshotted tx DAG for a Transfer action receipt that satisfies all
+// four conditions: predecessor = recipes contract, receiver = expected
+// recipient (Bob for claim, Alice for timeout), deposit = expected amount,
+// and the receipt's outcome status is `SuccessValue`.
+//
+// The Transfer receipt always lives in the yield tx's DAG — same DAG as
+// the `handoff_released` / `handoff_refunded` trace event — because the
+// callback that schedules the transfer was itself registered at yield
+// time. Finding it there is additional evidence for the DAG-placement
+// invariant; the delta-check is the separate empirical claim on value.
+
+export interface AtomicityInvariantResult {
+  held: boolean;
+  // False when no Transfer receipt matching `expectedRecipient` was
+  // found in the snapshot — the claim/refund never happened or wasn't
+  // snapshotted. Treated as "inconclusive" (still a problem, but not
+  // "the primitive moved the wrong amount").
+  evaluable: boolean;
+  mode: "claim" | "timeout";
+  expectedRecipient: string;
+  expectedAmountYocto: string;
+  observed: {
+    receiptId: string;
+    receiverId: string;
+    depositYocto: string;
+    succeeded: boolean;
+  } | null;
+}
+
+function findHandoffTransfer(
+  src: SnapshotSource,
+  rolesToScan: TxRole[],
+  contractId: string,
+  expectedRecipient: string,
+): AtomicityInvariantResult["observed"] {
+  for (const role of rolesToScan) {
+    const tx = src.getTxByRole(role);
+    if (!tx) continue;
+    for (const r of tx.receipts) {
+      if (r.predecessor_id !== contractId) continue;
+      if (r.receiver_id !== expectedRecipient) continue;
+      const actions = r.receipt?.Action?.actions ?? [];
+      for (const a of actions) {
+        const transfer = (a as { Transfer?: { deposit: string } }).Transfer;
+        if (!transfer) continue;
+        const outcome = tx.receipts_outcome.find((o) => o.id === r.receipt_id);
+        const succeeded =
+          outcome !== undefined &&
+          typeof outcome.outcome.status === "object" &&
+          outcome.outcome.status !== null &&
+          "SuccessValue" in outcome.outcome.status;
+        return {
+          receiptId: r.receipt_id,
+          receiverId: r.receiver_id,
+          depositYocto: transfer.deposit,
+          succeeded,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function checkAtomicity(
+  src: SnapshotSource,
+  mode: "claim" | "timeout",
+  signer: string,
+  recipient: string,
+  amountYocto: string,
+  contractId: string,
+): AtomicityInvariantResult {
+  const expectedRecipient = mode === "claim" ? recipient : signer;
+  const rolesToScan: TxRole[] = mode === "timeout" ? ["yield"] : ["yield", "resume"];
+  const observed = findHandoffTransfer(src, rolesToScan, contractId, expectedRecipient);
+  const held =
+    observed !== null &&
+    observed.receiverId === expectedRecipient &&
+    observed.depositYocto === amountYocto &&
+    observed.succeeded;
+  return {
+    held,
+    evaluable: observed !== null,
+    mode,
+    expectedRecipient,
+    expectedAmountYocto: amountYocto,
+    observed,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Audit artifact shapes
 // ---------------------------------------------------------------------------
 
@@ -360,6 +528,12 @@ interface AuditBase {
   name: string;
   signer: string;
   auditSource: "onchain_json" | "live_rpc";
+  // Whether the underlying snapshot was complete, partial, or failed.
+  // Lets the report tell apart "no value because snapshot dropped" from
+  // "no value because the field doesn't apply to this recipe". Optional
+  // for back-compat with audit.json files written before the field
+  // existed; consumers should treat absence as "complete".
+  snapshotStatus?: SnapshotStatus;
   yieldTxHash: string;
   yieldBlockHeight: number | null;
   explorerUrl: string;
@@ -384,6 +558,9 @@ export interface TimeoutAudit extends AuditBase {
   callbackBlockHeight: number | null;
   timeoutFired: boolean;
   blocksFromYieldToCallback: number | null;
+  // NEP-519 200-block budget empirically checked against
+  // blocksFromYieldToCallback. See `checkBudget` in this module for bounds.
+  budgetInvariant: BudgetInvariantResult;
 }
 
 export interface ChainedAudit extends AuditBase {
@@ -420,6 +597,13 @@ export interface HandoffAudit extends AuditBase {
   blocksFromYieldToResume: number | null;
   // Timeout mode: y→settle ~= 200; claim mode: y→settle ~= yield_to_resume + 1–2.
   blocksFromYieldToSettle: number | null;
+  // Atomicity: Transfer receipt matching (recipient, amount, success).
+  // Populated for both modes; `expectedRecipient` differs (Bob in claim;
+  // signer in timeout). See `checkAtomicity` in this module.
+  atomicityInvariant: AtomicityInvariantResult;
+  // NEP-519 200-block budget — only applicable in timeout mode. Undefined
+  // for claim runs (claim fires at resumer's pace, no budget to check).
+  budgetInvariant?: BudgetInvariantResult;
 }
 
 export type Audit = BasicAudit | TimeoutAudit | ChainedAudit | HandoffAudit;
@@ -429,7 +613,7 @@ export type Audit = BasicAudit | TimeoutAudit | ChainedAudit | HandoffAudit;
 // ---------------------------------------------------------------------------
 
 async function txBlockHeight(
-  src: CaptureSource,
+  src: SnapshotSource,
   tx: TxStatusResult | null,
 ): Promise<number | null> {
   if (!tx) return null;
@@ -437,7 +621,7 @@ async function txBlockHeight(
   return block?.header.height ?? null;
 }
 
-// Walk all captured tx DAGs for the first receipt whose logs contain an
+// Walk all snapshotted tx DAGs for the first receipt whose logs contain an
 // event matching (recipe, name, evs). Returns its block height or null.
 //
 // IMPORTANT: the yielded callback receipt is scheduled by `Promise::new_yield`
@@ -447,7 +631,7 @@ async function txBlockHeight(
 // execution. The resume tx's DAG typically contains only the `recipe_resumed`
 // event. This helper searches all roles to be robust to that.
 async function findEventBlockInAllTxs(
-  src: CaptureSource,
+  src: SnapshotSource,
   roles: string[],
   recipe: RecipeName,
   name: string,
@@ -468,7 +652,7 @@ async function findEventBlockInAllTxs(
 }
 
 function findObservedValueInAllTxs(
-  src: CaptureSource,
+  src: SnapshotSource,
   roles: string[],
   recipe: RecipeName,
   name: string,
@@ -489,7 +673,7 @@ function findObservedValueInAllTxs(
 }
 
 function findResolvedOutcomeInAllTxs(
-  src: CaptureSource,
+  src: SnapshotSource,
   roles: string[],
   recipe: RecipeName,
   name: string,
@@ -511,7 +695,7 @@ function findResolvedOutcomeInAllTxs(
 // The timeout recipe's callback receipt DOES appear in the yield tx's
 // DAG — the yield registers the callback receipt at yield time, and the
 // runtime delivers the timeout PromiseError to that same receipt when
-// the 200-block budget elapses. So we just scan the captured tx DAG for
+// the 200-block budget elapses. So we just scan the snapshotted tx DAG for
 // the `recipe_resolved_err` trace event, no block-scan needed.
 //
 // (An earlier version did a 260-block scan assuming the callback was a
@@ -523,7 +707,7 @@ function findResolvedOutcomeInAllTxs(
 // ---------------------------------------------------------------------------
 
 async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<BasicAudit> {
-  const src = buildCaptureSource(raw, recipeDir);
+  const src = buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const resumeTx = src.getTxByRole("resume");
   const yieldHeight = await txBlockHeight(src, yieldTx);
@@ -551,7 +735,7 @@ async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<Bas
       ? `resolved_ok with payload="${resolved.outcome}"; yield→resume=${blocksFromYieldToResume ?? "?"}b; resume→callback=${blocksFromResumeToCallback ?? "?"}b`
       : resolved?.kind === "err"
         ? `resolved_err reason="${resolved.reason}"`
-        : "callback not observed in capture";
+        : "callback not observed in snapshot";
 
   const { placement, violations } = computeDagPlacement(src, "basic", raw.name);
 
@@ -561,6 +745,7 @@ async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<Bas
     name: raw.name,
     signer: raw.signer,
     auditSource: src.kind,
+    snapshotStatus: src.snapshotStatus,
     yieldTxHash: raw.yieldTxHash,
     yieldBlockHeight: yieldHeight,
     resumeTxHash: raw.resumeTxHash,
@@ -578,7 +763,7 @@ async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<Bas
 }
 
 async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise<TimeoutAudit> {
-  const src = buildCaptureSource(raw, recipeDir);
+  const src = buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const yieldHeight = (await txBlockHeight(src, yieldTx)) ?? raw.yieldBlockHeight;
 
@@ -599,9 +784,10 @@ async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise
     ? `timeout fired after ${blocksFromYieldToCallback ?? "?"} blocks (NEP-519 budget = 200)`
     : resolved?.kind === "ok"
       ? `unexpectedly resolved_ok with outcome="${resolved.outcome}"`
-      : `timeout callback not located in captured yield tx DAG`;
+      : `timeout callback not located in snapshotted yield tx DAG`;
 
   const { placement, violations } = computeDagPlacement(src, "timeout", raw.name);
+  const budgetInvariant = checkBudget(blocksFromYieldToCallback);
 
   return {
     recipe: "timeout",
@@ -609,6 +795,7 @@ async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise
     name: raw.name,
     signer: raw.signer,
     auditSource: src.kind,
+    snapshotStatus: src.snapshotStatus,
     yieldTxHash: raw.yieldTxHash,
     yieldBlockHeight: yieldHeight,
     callbackBlockHeight,
@@ -618,11 +805,12 @@ async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise
     interpretation,
     dagPlacement: placement,
     dagInvariantViolations: violations,
+    budgetInvariant,
   };
 }
 
 async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise<ChainedAudit> {
-  const src = buildCaptureSource(raw, recipeDir);
+  const src = buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const resumeTx = src.getTxByRole("resume");
   const yieldHeight = await txBlockHeight(src, yieldTx);
@@ -661,7 +849,7 @@ async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise
         `yield→resume=${blocksFromYieldToResume ?? "?"}b; resume→dispatch=${blocksFromResumeToDispatch ?? "?"}b; dispatch→callback=${blocksFromDispatchToCallback ?? "?"}b`
       : resolved?.kind === "err"
         ? `chained resolved_err reason="${resolved.reason}"`
-        : "chained callback not observed in capture";
+        : "chained callback not observed in snapshot";
 
   const { placement, violations } = computeDagPlacement(src, "chained", raw.name);
 
@@ -671,6 +859,7 @@ async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise
     name: raw.name,
     signer: raw.signer,
     auditSource: src.kind,
+    snapshotStatus: src.snapshotStatus,
     counterId: raw.counterId,
     delta: raw.delta,
     yieldTxHash: raw.yieldTxHash,
@@ -695,7 +884,7 @@ async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise
 // Recipe 4: Atomic handoff audit
 // ---------------------------------------------------------------------------
 //
-// Both modes capture the yield tx; claim mode additionally captures the
+// Both modes snapshot the yield tx; claim mode additionally snapshots the
 // resume tx. All handoff-specific trace events (handoff_offered /
 // handoff_released / handoff_refunded) live in the yield tx's DAG
 // because the callback receipt — where the settle-path transfer happens
@@ -703,7 +892,7 @@ async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise
 // and chained recipes demonstrate, but here it carries economic value.
 
 function findSettleEventInAllTxs(
-  src: CaptureSource,
+  src: SnapshotSource,
   roles: TxRole[],
   name: string,
 ): { ev: "handoff_released" | "handoff_refunded"; body: TraceLogBody } | null {
@@ -722,7 +911,7 @@ function findSettleEventInAllTxs(
 }
 
 async function auditHandoff(raw: RawHandoffArtifact, recipeDir: string): Promise<HandoffAudit> {
-  const src = buildCaptureSource(raw, recipeDir);
+  const src = buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const resumeTx = raw.resumeTxHash ? src.getTxByRole("resume") : null;
   const yieldHeight = (await txBlockHeight(src, yieldTx)) ?? raw.yieldBlockHeight;
@@ -753,15 +942,27 @@ async function auditHandoff(raw: RawHandoffArtifact, recipeDir: string): Promise
   const { placement, violations } = computeDagPlacement(src, "handoff", raw.name, {
     handoffMode: raw.mode,
   });
+  const atomicityInvariant = checkAtomicity(
+    src,
+    raw.mode,
+    raw.signer,
+    raw.recipient,
+    raw.amountYocto,
+    ACCOUNTS.recipes,
+  );
+  // Budget invariant applies only to timeout runs; claim runs settle at
+  // the resumer's pace so there's no 200-block budget to check.
+  const budgetInvariant =
+    raw.mode === "timeout" ? checkBudget(blocksFromYieldToSettle) : undefined;
 
   const interpretation =
     raw.mode === "claim"
       ? settledOk
         ? `claim: ${raw.amountYocto} yocto → ${fundsRecipient}; yield→resume=${blocksFromYieldToResume ?? "?"}b; yield→settle=${blocksFromYieldToSettle ?? "?"}b`
-        : `claim: settle not observed in capture`
+        : `claim: settle not observed in snapshot`
       : settleEvent?.ev === "handoff_refunded"
         ? `timeout: refunded ${raw.amountYocto} yocto → ${fundsRecipient}; yield→settle=${blocksFromYieldToSettle ?? "?"}b (NEP-519 budget = 200)`
-        : `timeout: refund not observed in captured yield tx DAG`;
+        : `timeout: refund not observed in snapshotted yield tx DAG`;
 
   return {
     recipe: "handoff",
@@ -770,6 +971,7 @@ async function auditHandoff(raw: RawHandoffArtifact, recipeDir: string): Promise
     name: raw.name,
     signer: raw.signer,
     auditSource: src.kind,
+    snapshotStatus: src.snapshotStatus,
     recipient: raw.recipient,
     amountYocto: raw.amountYocto,
     yieldTxHash: raw.yieldTxHash,
@@ -786,6 +988,8 @@ async function auditHandoff(raw: RawHandoffArtifact, recipeDir: string): Promise
     interpretation,
     dagPlacement: placement,
     dagInvariantViolations: violations,
+    atomicityInvariant,
+    ...(budgetInvariant ? { budgetInvariant } : {}),
   };
 }
 
@@ -829,9 +1033,26 @@ export async function auditRecipe(recipe: RecipeName): Promise<Audit[]> {
       );
       for (const v of audit.dagInvariantViolations) {
         process.stderr.write(
-          `[audit ${recipe}]      ${v.event}: expected in ${v.expected} tx DAG, found in ${v.actual ?? "no captured tx"}\n`,
+          `[audit ${recipe}]      ${v.event}: expected in ${v.expected} tx DAG, found in ${v.actual ?? "no snapshotted tx"}\n`,
         );
       }
+    }
+    const budget = (audit as { budgetInvariant?: BudgetInvariantResult }).budgetInvariant;
+    if (budget && budget.evaluable && !budget.held) {
+      process.stderr.write(
+        `[audit ${recipe}]   !! budget invariant violated: yield→callback=${budget.observedBlocks} not in [${budget.lowerBound}, ${budget.upperBound}] (NEP-519 spec = 200)\n`,
+      );
+    }
+    const atomicity = (audit as { atomicityInvariant?: AtomicityInvariantResult }).atomicityInvariant;
+    if (atomicity && atomicity.evaluable && !atomicity.held) {
+      process.stderr.write(
+        `[audit ${recipe}]   !! atomicity invariant violated: expected Transfer(${atomicity.expectedRecipient}, ${atomicity.expectedAmountYocto}) ` +
+          `observed (${atomicity.observed?.receiverId}, ${atomicity.observed?.depositYocto}, succeeded=${atomicity.observed?.succeeded})\n`,
+      );
+    } else if (atomicity && !atomicity.evaluable) {
+      process.stderr.write(
+        `[audit ${recipe}]   !! atomicity invariant inconclusive: no Transfer receipt to ${atomicity.expectedRecipient} found in snapshot\n`,
+      );
     }
     audits.push(audit);
   }

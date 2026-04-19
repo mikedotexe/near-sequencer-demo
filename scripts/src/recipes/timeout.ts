@@ -14,7 +14,7 @@
 // at yield time and lives in the yield tx's DAG; when the 200-block
 // budget expires, the runtime delivers `PromiseError` to that
 // already-scheduled receipt. So the audit finds `recipe_resolved_err`
-// by scanning the captured yield tx's `receipts_outcome[]` — no
+// by scanning the snapshotted yield tx's `receipts_outcome[]` — no
 // block-scan needed.
 
 import {
@@ -26,7 +26,7 @@ import {
 } from "../config.js";
 import { blockByHash, connectSender, txStatus } from "../rpc.js";
 import { makeDirectSender, type DirectSender } from "../tx.js";
-import { writeRawAndCapture } from "./common.js";
+import { writeRawAndSnapshot } from "./common.js";
 import type { RawTimeoutArtifact } from "./types.js";
 
 // Poll the yield tx's receipt DAG until it executes on-chain, then fetch
@@ -91,7 +91,7 @@ export async function runTimeoutRepeated(repeat: number): Promise<RawTimeoutArti
   for (let i = 1; i <= repeat; i++) {
     process.stderr.write(`[run timeout] run ${i}/${repeat}...\n`);
     const raw = await runOnce(sender, i);
-    await writeRawAndCapture(raw, [{ role: "yield", hash: raw.yieldTxHash, signer: raw.signer }]);
+    await writeRawAndSnapshot(raw, [{ role: "yield", hash: raw.yieldTxHash, signer: raw.signer }]);
     out.push(raw);
   }
   return out;

@@ -1,4 +1,4 @@
-// Shared types for per-recipe flows and their captured artifacts.
+// Shared types for per-recipe flows and their snapshotted artifacts.
 //
 // Each recipe run produces:
 //   artifacts/<network>/recipe-<name>/run-NN.raw.json      — tx hashes + timing
@@ -55,7 +55,7 @@ export interface RawChainedArtifact extends RawArtifactBase {
   resumeTxHash: string;
 }
 
-// Atomic handoff (Recipe 4). Two modes capture the two lifecycles on
+// Atomic handoff (Recipe 4). Two modes snapshot the two lifecycles on
 // one contract shape:
 //   - "claim":   Alice yields + attaches NEAR; Bob resumes → transfer to Bob
 //   - "timeout": Alice yields; no resume; ~200 blocks later refund to Alice
@@ -71,7 +71,7 @@ export interface RawHandoffArtifact extends RawArtifactBase {
   // Present when mode="claim"; null when mode="timeout" (no resume tx).
   resumeTxHash: string | null;
   claimSigner: string | null;
-  // Yield-tx block height captured for later block-delta analysis
+  // Yield-tx block height snapshotted for later block-delta analysis
   // (used by the timeout-mode audit the same way the timeout recipe uses it).
   yieldBlockHeight: number | null;
 }

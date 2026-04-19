@@ -6,7 +6,16 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ARTIFACTS_DIR } from "./config.js";
-import type { Audit, BasicAudit, ChainedAudit, HandoffAudit, TimeoutAudit } from "./audit.js";
+import type {
+  Audit,
+  AtomicityInvariantResult,
+  BasicAudit,
+  BudgetInvariantResult,
+  ChainedAudit,
+  HandoffAudit,
+  TimeoutAudit,
+  TxRole,
+} from "./audit.js";
 import { RECIPE_NAMES, type RecipeName } from "./recipes/types.js";
 
 interface StatRange {
@@ -25,12 +34,189 @@ function stat(values: Array<number | null>): StatRange {
   return { min: sorted[0]!, max: sorted[sorted.length - 1]!, median, count: known.length };
 }
 
+// Per-recipe roll-up of the per-run DAG-placement invariant check. The
+// invariant is defined in audit.ts's computeDagPlacement: every callback
+// trace event (recipe_resolved_*, recipe_dispatched, recipe_callback_observed,
+// handoff_released, handoff_refunded) must land in the YIELD tx's DAG, not
+// the resume tx's. This summary propagates the per-run results so report.md
+// can show a PASS/VIOLATED line without re-reading each audit.json.
+export interface DagInvariantSummary {
+  held: boolean;
+  runsChecked: number;
+  runsWithViolations: number;
+  eventsChecked: number;
+  eventsInExpectedPlace: number;
+  violations: Array<{
+    runIndex: number;
+    mode?: "claim" | "timeout";
+    event: string;
+    expected: TxRole;
+    actual: TxRole | null;
+  }>;
+}
+
+// Per-recipe roll-up of the NEP-519 200-block budget invariant. The
+// per-run check lives in audit.ts's checkBudget; here we collect the
+// observed blocks across runs, count how many fell inside the expected
+// window, and note any violations. Applicable to timeout recipe (all
+// runs) and handoff recipe (timeout-mode runs only).
+export interface BudgetInvariantSummary {
+  held: boolean;
+  runsChecked: number;        // runs with an evaluable budget check
+  runsInRange: number;
+  runsOutOfRange: number;
+  runsNotEvaluable: number;   // callback receipt missing from snapshot
+  lowerBound: number;
+  upperBound: number;
+  observedBlocks: number[];
+  violations: Array<{
+    runIndex: number;
+    mode?: "claim" | "timeout";
+    observedBlocks: number;
+  }>;
+}
+
+export interface BudgetInputRun {
+  runIndex: number;
+  mode?: "claim" | "timeout";
+  budgetInvariant?: BudgetInvariantResult;
+}
+
+// Export form is the pure-data surface that scripts/test exercises.
+// It's split from the per-recipe summarize paths so tests don't have to
+// pretend to be auditing the whole recipe corpus to exercise a single
+// aggregation pass.
+export function computeBudgetInvariant(runs: BudgetInputRun[]): BudgetInvariantSummary {
+  const applicable = runs.filter((r) => r.budgetInvariant !== undefined);
+  let runsInRange = 0;
+  let runsOutOfRange = 0;
+  let runsNotEvaluable = 0;
+  const observedBlocks: number[] = [];
+  const violations: BudgetInvariantSummary["violations"] = [];
+  let lowerBound = 0;
+  let upperBound = 0;
+  for (const r of applicable) {
+    const b = r.budgetInvariant!;
+    lowerBound = b.lowerBound;
+    upperBound = b.upperBound;
+    if (!b.evaluable) {
+      runsNotEvaluable++;
+      continue;
+    }
+    if (b.held) {
+      runsInRange++;
+      observedBlocks.push(b.observedBlocks!);
+    } else {
+      runsOutOfRange++;
+      observedBlocks.push(b.observedBlocks!);
+      violations.push({
+        runIndex: r.runIndex,
+        ...(r.mode ? { mode: r.mode } : {}),
+        observedBlocks: b.observedBlocks!,
+      });
+    }
+  }
+  return {
+    held: runsOutOfRange === 0,
+    runsChecked: runsInRange + runsOutOfRange,
+    runsInRange,
+    runsOutOfRange,
+    runsNotEvaluable,
+    lowerBound,
+    upperBound,
+    observedBlocks,
+    violations,
+  };
+}
+
+// Per-recipe roll-up of Recipe 4's atomicity invariant. Per-run check
+// lives in audit.ts's checkAtomicity; here we count how many runs had a
+// matching Transfer receipt (predecessor = contract, receiver =
+// expectedRecipient, deposit = amountYocto, outcome = SuccessValue).
+export interface AtomicityInvariantSummary {
+  held: boolean;
+  runsChecked: number;
+  runsAtomicallyHeld: number;
+  runsNotEvaluable: number;
+  violations: Array<{
+    runIndex: number;
+    mode: "claim" | "timeout";
+    expectedRecipient: string;
+    expectedAmountYocto: string;
+    observed: AtomicityInvariantResult["observed"];
+  }>;
+}
+
+export function computeAtomicityInvariant(runs: HandoffAudit[]): AtomicityInvariantSummary {
+  let runsAtomicallyHeld = 0;
+  let runsNotEvaluable = 0;
+  const violations: AtomicityInvariantSummary["violations"] = [];
+  for (const r of runs) {
+    const a = r.atomicityInvariant;
+    if (!a.evaluable) {
+      runsNotEvaluable++;
+      continue;
+    }
+    if (a.held) {
+      runsAtomicallyHeld++;
+    } else {
+      violations.push({
+        runIndex: r.runIndex,
+        mode: a.mode,
+        expectedRecipient: a.expectedRecipient,
+        expectedAmountYocto: a.expectedAmountYocto,
+        observed: a.observed,
+      });
+    }
+  }
+  const evaluated = runs.length - runsNotEvaluable;
+  return {
+    held: runsAtomicallyHeld === evaluated && evaluated > 0,
+    runsChecked: runs.length,
+    runsAtomicallyHeld,
+    runsNotEvaluable,
+    violations,
+  };
+}
+
+export function computeDagInvariant(audits: Audit[]): DagInvariantSummary {
+  let runsWithViolations = 0;
+  let eventsChecked = 0;
+  let eventsInExpectedPlace = 0;
+  const violations: DagInvariantSummary["violations"] = [];
+  for (const a of audits) {
+    if (a.dagInvariantViolations.length > 0) runsWithViolations++;
+    const expectedCount = Object.keys(a.dagPlacement).length;
+    const violationCount = a.dagInvariantViolations.length;
+    eventsChecked += expectedCount;
+    eventsInExpectedPlace += expectedCount - violationCount;
+    for (const v of a.dagInvariantViolations) {
+      violations.push({
+        runIndex: a.runIndex,
+        ...(a.recipe === "handoff" ? { mode: a.mode } : {}),
+        event: v.event,
+        expected: v.expected,
+        actual: v.actual,
+      });
+    }
+  }
+  return {
+    held: runsWithViolations === 0,
+    runsChecked: audits.length,
+    runsWithViolations,
+    eventsChecked,
+    eventsInExpectedPlace,
+    violations,
+  };
+}
+
 export interface BasicSummary {
   recipe: "basic";
   runCount: number;
   resolvedOkCount: number;
   blocksFromYieldToResume: StatRange;
   blocksFromResumeToCallback: StatRange;
+  dagInvariant: DagInvariantSummary;
   runs: BasicAudit[];
 }
 
@@ -39,6 +225,8 @@ export interface TimeoutSummary {
   runCount: number;
   timeoutFiredCount: number;
   blocksFromYieldToCallback: StatRange;
+  dagInvariant: DagInvariantSummary;
+  budgetInvariant: BudgetInvariantSummary;
   runs: TimeoutAudit[];
 }
 
@@ -50,6 +238,7 @@ export interface ChainedSummary {
   blocksFromResumeToDispatch: StatRange;
   blocksFromDispatchToCallback: StatRange;
   observedValues: number[];
+  dagInvariant: DagInvariantSummary;
   runs: ChainedAudit[];
 }
 
@@ -66,6 +255,11 @@ export interface HandoffSummary {
   // claim-path latency when they're reported together.
   claimYieldToSettle: StatRange;
   timeoutYieldToSettle: StatRange;
+  dagInvariant: DagInvariantSummary;
+  // Budget applies only to timeout runs; summary reflects that (runsChecked
+  // counts evaluable timeout runs, not all runs).
+  budgetInvariant: BudgetInvariantSummary;
+  atomicityInvariant: AtomicityInvariantSummary;
   runs: HandoffAudit[];
 }
 
@@ -92,6 +286,7 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
       resolvedOkCount: runs.filter((r) => r.resolvedOk).length,
       blocksFromYieldToResume: stat(runs.map((r) => r.blocksFromYieldToResume)),
       blocksFromResumeToCallback: stat(runs.map((r) => r.blocksFromResumeToCallback)),
+      dagInvariant: computeDagInvariant(runs),
       runs,
     };
   } else if (recipe === "timeout") {
@@ -101,6 +296,10 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
       runCount: runs.length,
       timeoutFiredCount: runs.filter((r) => r.timeoutFired).length,
       blocksFromYieldToCallback: stat(runs.map((r) => r.blocksFromYieldToCallback)),
+      dagInvariant: computeDagInvariant(runs),
+      budgetInvariant: computeBudgetInvariant(
+        runs.map((r) => ({ runIndex: r.runIndex, budgetInvariant: r.budgetInvariant })),
+      ),
       runs,
     };
   } else if (recipe === "chained") {
@@ -115,6 +314,7 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
       observedValues: runs
         .map((r) => r.observedValue)
         .filter((v): v is number => v !== null),
+      dagInvariant: computeDagInvariant(runs),
       runs,
     };
   } else {
@@ -134,6 +334,15 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
       blocksFromYieldToSettle: stat(runs.map((r) => r.blocksFromYieldToSettle)),
       claimYieldToSettle: stat(claims.map((r) => r.blocksFromYieldToSettle)),
       timeoutYieldToSettle: stat(timeouts.map((r) => r.blocksFromYieldToSettle)),
+      dagInvariant: computeDagInvariant(runs),
+      budgetInvariant: computeBudgetInvariant(
+        timeouts.map((r) => ({
+          runIndex: r.runIndex,
+          mode: r.mode,
+          budgetInvariant: r.budgetInvariant,
+        })),
+      ),
+      atomicityInvariant: computeAtomicityInvariant(runs),
       runs,
     };
   }

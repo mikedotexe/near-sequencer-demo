@@ -39,7 +39,7 @@ import {
 } from "../config.js";
 import { blockByHash, connectSender, txStatus } from "../rpc.js";
 import { makeDirectSender, type DirectSender } from "../tx.js";
-import { writeRawAndCapture } from "./common.js";
+import { writeRawAndSnapshot } from "./common.js";
 import type { RawHandoffArtifact } from "./types.js";
 
 export type HandoffMode = "claim" | "timeout";
@@ -155,7 +155,7 @@ export async function runHandoffRepeated(
       hashes.push({ role: "resume", hash: raw.resumeTxHash, signer: raw.claimSigner });
     }
     const modeSuffix = `${mode}-${i.toString().padStart(2, "0")}`;
-    await writeRawAndCapture(raw, hashes, modeSuffix);
+    await writeRawAndSnapshot(raw, hashes, modeSuffix);
     out.push(raw);
   }
   return out;

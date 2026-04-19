@@ -23,7 +23,7 @@ import {
 } from "../config.js";
 import { connectSender } from "../rpc.js";
 import { makeDirectSender, type DirectSender } from "../tx.js";
-import { writeRawAndCapture } from "./common.js";
+import { writeRawAndSnapshot } from "./common.js";
 import type { RawBasicArtifact } from "./types.js";
 
 const YIELD_TO_RESUME_DELAY_MS = 2000;
@@ -77,7 +77,7 @@ export async function runBasicRepeated(repeat: number): Promise<RawBasicArtifact
   for (let i = 1; i <= repeat; i++) {
     process.stderr.write(`[run basic] run ${i}/${repeat}...\n`);
     const raw = await runOnce(sender, i);
-    await writeRawAndCapture(raw, [
+    await writeRawAndSnapshot(raw, [
       { role: "yield", hash: raw.yieldTxHash, signer: raw.signer },
       { role: "resume", hash: raw.resumeTxHash, signer: raw.signer },
     ]);

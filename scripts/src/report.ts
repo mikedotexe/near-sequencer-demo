@@ -6,7 +6,16 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ACCOUNTS, ARTIFACTS_DIR, BOB_ACCOUNT_ID, EXPLORER_BASE, NEAR_NETWORK } from "./config.js";
-import { summarizeAll, type RecipeSummary } from "./aggregate.js";
+import {
+  summarizeAll,
+  type AtomicityInvariantSummary,
+  type BudgetInvariantSummary,
+  type DagInvariantSummary,
+  type HandoffSummary,
+  type RecipeSummary,
+  type TimeoutSummary,
+} from "./aggregate.js";
+import type { SnapshotStatus } from "./snapshot.js";
 
 function fmtYoctoAsNear(yocto: string | null): string {
   if (yocto === null) return "n/a";
@@ -24,7 +33,19 @@ function fmtYoctoAsNear(yocto: string | null): string {
 }
 
 function fmt(n: number | null): string {
-  return n === null ? "n/a" : String(n);
+  return n === null ? "—" : String(n);
+}
+
+// Same as fmt() but distinguishes null because-snapshot-failed from
+// null because-not-applicable. Use where the cell's value depends on a
+// snapshotted tx (block deltas, resume heights); stick with fmt() for
+// cells that are intrinsically optional (not applicable in a given mode).
+function fmtCell(n: number | null, snapshotStatus: SnapshotStatus | undefined): string {
+  if (n !== null) return String(n);
+  // Back-compat: audits written before snapshotStatus existed default to
+  // "complete" semantics — render "—" rather than a false alarm.
+  if (!snapshotStatus || snapshotStatus.overall === "complete") return "—";
+  return "**snapshot failed**";
 }
 
 function heading(r: RecipeSummary["recipe"]): string {
@@ -44,7 +65,7 @@ function runsTable(s: RecipeSummary): string {
   if (s.recipe === "basic") {
     const rows = s.runs.map(
       (r) =>
-        `| ${r.runIndex} | \`${r.yieldTxHash.slice(0, 12)}…\` | \`${r.resumeTxHash.slice(0, 12)}…\` | ${r.resolvedOk ? "ok" : "**fail**"} | ${fmt(r.blocksFromYieldToResume)} | ${fmt(r.blocksFromResumeToCallback)} | [explorer](${r.explorerUrl}) |`,
+        `| ${r.runIndex} | \`${r.yieldTxHash.slice(0, 12)}…\` | \`${r.resumeTxHash.slice(0, 12)}…\` | ${r.resolvedOk ? "ok" : "**fail**"} | ${fmtCell(r.blocksFromYieldToResume, r.snapshotStatus)} | ${fmtCell(r.blocksFromResumeToCallback, r.snapshotStatus)} | [explorer](${r.explorerUrl}) |`,
     );
     return [
       "| run | yield tx | resume tx | outcome | yield→resume (blocks) | resume→callback (blocks) | link |",
@@ -55,7 +76,7 @@ function runsTable(s: RecipeSummary): string {
   if (s.recipe === "timeout") {
     const rows = s.runs.map(
       (r) =>
-        `| ${r.runIndex} | \`${r.yieldTxHash.slice(0, 12)}…\` | ${r.timeoutFired ? "fired" : "**not detected**"} | ${fmt(r.blocksFromYieldToCallback)} | [explorer](${r.explorerUrl}) |`,
+        `| ${r.runIndex} | \`${r.yieldTxHash.slice(0, 12)}…\` | ${r.timeoutFired ? "fired" : "**not detected**"} | ${fmtCell(r.blocksFromYieldToCallback, r.snapshotStatus)} | [explorer](${r.explorerUrl}) |`,
     );
     return [
       "| run | yield tx | timeout | yield→callback (blocks) | link |",
@@ -66,7 +87,7 @@ function runsTable(s: RecipeSummary): string {
   if (s.recipe === "chained") {
     const rows = s.runs.map(
       (r) =>
-        `| ${r.runIndex} | \`${r.yieldTxHash.slice(0, 12)}…\` | \`${r.resumeTxHash.slice(0, 12)}…\` | ${r.delta > 0 ? "+1" : "-1"} | ${fmt(r.observedValue)} | ${r.resolvedOk ? "ok" : "**fail**"} | ${fmt(r.blocksFromYieldToResume)} | ${fmt(r.blocksFromResumeToDispatch)} | ${fmt(r.blocksFromDispatchToCallback)} | [explorer](${r.explorerUrl}) |`,
+        `| ${r.runIndex} | \`${r.yieldTxHash.slice(0, 12)}…\` | \`${r.resumeTxHash.slice(0, 12)}…\` | ${r.delta > 0 ? "+1" : "-1"} | ${fmt(r.observedValue)} | ${r.resolvedOk ? "ok" : "**fail**"} | ${fmtCell(r.blocksFromYieldToResume, r.snapshotStatus)} | ${fmtCell(r.blocksFromResumeToDispatch, r.snapshotStatus)} | ${fmtCell(r.blocksFromDispatchToCallback, r.snapshotStatus)} | [explorer](${r.explorerUrl}) |`,
     );
     return [
       "| run | yield tx | resume tx | delta | observed counter | outcome | y→r (b) | r→d (b) | d→cb (b) | link |",
@@ -86,7 +107,10 @@ function runsTable(s: RecipeSummary): string {
           ? "**unexpected claim**"
           : "refunded";
     const landedOn = r.fundsRecipient ? `\`${r.fundsRecipient}\`` : "—";
-    return `| ${r.runIndex} | ${r.mode} | \`${r.yieldTxHash.slice(0, 12)}…\` | ${resumeCell} | ${outcome} | ${landedOn} | ${fmt(r.blocksFromYieldToResume)} | ${fmt(r.blocksFromYieldToSettle)} | [explorer](${r.explorerUrl}) |`;
+    // yield→resume is intrinsically null for timeout mode (no resume exists),
+    // so use fmt() there; yield→settle derives from the yield tx, so it goes
+    // through fmtCell() to surface snapshot failures.
+    return `| ${r.runIndex} | ${r.mode} | \`${r.yieldTxHash.slice(0, 12)}…\` | ${resumeCell} | ${outcome} | ${landedOn} | ${fmt(r.blocksFromYieldToResume)} | ${fmtCell(r.blocksFromYieldToSettle, r.snapshotStatus)} | [explorer](${r.explorerUrl}) |`;
   });
   return [
     "| run | mode | yield tx | resume tx | outcome | funds landed on | y→resume (b) | y→settle (b) | link |",
@@ -129,6 +153,173 @@ function aggBlock(s: RecipeSummary): string {
   ].join("\n");
 }
 
+// Renders the per-recipe DAG-placement invariant status. The invariant
+// is defined in audit.ts: every callback-emitted trace event must land in
+// the YIELD tx's DAG, not the resume tx's. Populated by computeDagInvariant
+// in aggregate.ts from each per-run `dagPlacement` / `dagInvariantViolations`.
+function dagInvariantLine(dag: DagInvariantSummary): string {
+  const runsWord = dag.runsChecked === 1 ? "run" : "runs";
+  if (dag.held) {
+    return `- DAG-placement invariant: **PASS** (${dag.eventsInExpectedPlace}/${dag.eventsChecked} trace events across ${dag.runsChecked} ${runsWord} land in the expected tx DAG — the yield tx is the root of the receipt tree)`;
+  }
+  return `- DAG-placement invariant: **VIOLATED** in ${dag.runsWithViolations}/${dag.runsChecked} ${runsWord} (${dag.eventsInExpectedPlace}/${dag.eventsChecked} events in expected place — see violations below)`;
+}
+
+// Per-recipe NEP-519 budget invariant line. yield→callback block delta
+// must lie in [lowerBound, upperBound]. Skipped when no runs were
+// evaluable (e.g. recipe hasn't run yet).
+function budgetInvariantLine(budget: BudgetInvariantSummary): string | null {
+  if (budget.runsChecked === 0 && budget.runsNotEvaluable === 0) return null;
+  const runsWord = budget.runsChecked === 1 ? "run" : "runs";
+  const range = `[${budget.lowerBound}, ${budget.upperBound}]`;
+  const observed = budget.observedBlocks.length > 0 ? budget.observedBlocks.join(", ") : "—";
+  if (budget.held && budget.runsChecked > 0) {
+    return `- Budget invariant (NEP-519 200-block timeout): **PASS** (${budget.runsInRange}/${budget.runsChecked} ${runsWord} inside ${range} blocks; observed=${observed})`;
+  }
+  if (budget.runsNotEvaluable > 0 && budget.runsChecked === 0) {
+    return `- Budget invariant: **inconclusive** (${budget.runsNotEvaluable} run(s) had no callback receipt in the snapshot)`;
+  }
+  return `- Budget invariant: **VIOLATED** (${budget.runsOutOfRange}/${budget.runsChecked} ${runsWord} outside ${range}; observed=${observed})`;
+}
+
+// Per-recipe atomicity invariant line (Recipe 4 only). Every evaluable
+// run must have a Transfer receipt from the recipes contract to the
+// expected recipient with the expected amount and a SuccessValue outcome.
+function atomicityInvariantLine(atomicity: AtomicityInvariantSummary): string {
+  const runsWord = atomicity.runsChecked === 1 ? "run" : "runs";
+  if (atomicity.held) {
+    return `- Atomicity invariant: **PASS** (${atomicity.runsAtomicallyHeld}/${atomicity.runsChecked} ${runsWord}: each snapshotted Transfer matches expected recipient + amount + succeeded)`;
+  }
+  if (atomicity.runsNotEvaluable > 0 && atomicity.runsAtomicallyHeld + atomicity.violations.length === 0) {
+    return `- Atomicity invariant: **inconclusive** (${atomicity.runsNotEvaluable}/${atomicity.runsChecked} ${runsWord} had no Transfer receipt in the snapshot)`;
+  }
+  return `- Atomicity invariant: **VIOLATED** in ${atomicity.violations.length}/${atomicity.runsChecked} ${runsWord} (see violations below)`;
+}
+
+function budgetViolationsTable(budget: BudgetInvariantSummary): string {
+  const rows = budget.violations.map((v) => {
+    const runLabel =
+      v.mode !== undefined
+        ? `${v.mode}-${v.runIndex.toString().padStart(2, "0")}`
+        : v.runIndex.toString().padStart(2, "0");
+    return `| ${runLabel} | ${v.observedBlocks} | [${budget.lowerBound}, ${budget.upperBound}] |`;
+  });
+  return [
+    "**Budget invariant violations:**",
+    "",
+    "| run | yield→callback (blocks) | expected range |",
+    "|-----|-------------------------|----------------|",
+    ...rows,
+  ].join("\n");
+}
+
+function atomicityViolationsTable(atomicity: AtomicityInvariantSummary): string {
+  const rows = atomicity.violations.map((v) => {
+    const runLabel = `${v.mode}-${v.runIndex.toString().padStart(2, "0")}`;
+    const observedCell = v.observed
+      ? `\`${v.observed.receiverId}\`, ${v.observed.depositYocto} yocto, succeeded=${v.observed.succeeded}`
+      : "no matching Transfer receipt";
+    return `| ${runLabel} | \`${v.expectedRecipient}\`, ${v.expectedAmountYocto} yocto | ${observedCell} |`;
+  });
+  return [
+    "**Atomicity invariant violations:**",
+    "",
+    "| run | expected | observed |",
+    "|-----|----------|----------|",
+    ...rows,
+  ].join("\n");
+}
+
+// Top-line invariant summary. Walks every recipe summary, enumerates each
+// applicable invariant, and returns a single PASS/FAIL line. This is the
+// first line a reader sees after the report's preamble — the claim-to-
+// evidence loop closed at a glance. Format: one bullet per invariant.
+function topLineInvariantBadge(summaries: RecipeSummary[]): string[] {
+  // DAG-placement — applies to every recipe.
+  const dagRunsChecked = summaries.reduce((n, s) => n + s.dagInvariant.runsChecked, 0);
+  const dagEventsChecked = summaries.reduce((n, s) => n + s.dagInvariant.eventsChecked, 0);
+  const dagEventsInPlace = summaries.reduce((n, s) => n + s.dagInvariant.eventsInExpectedPlace, 0);
+  const dagViolatingRuns = summaries.reduce((n, s) => n + s.dagInvariant.runsWithViolations, 0);
+  const dagHeld = dagViolatingRuns === 0;
+
+  // Budget — applies to timeout + handoff summaries when they have timeout runs.
+  const budgetSummaries = summaries.flatMap<BudgetInvariantSummary>((s) => {
+    if (s.recipe === "timeout") return [(s as TimeoutSummary).budgetInvariant];
+    if (s.recipe === "handoff") return [(s as HandoffSummary).budgetInvariant];
+    return [];
+  });
+  const budgetRunsChecked = budgetSummaries.reduce((n, b) => n + b.runsChecked, 0);
+  const budgetRunsInRange = budgetSummaries.reduce((n, b) => n + b.runsInRange, 0);
+  const budgetRunsOutOfRange = budgetSummaries.reduce((n, b) => n + b.runsOutOfRange, 0);
+  const budgetHeld = budgetRunsOutOfRange === 0;
+
+  // Atomicity — applies to handoff only.
+  const handoff = summaries.find((s) => s.recipe === "handoff") as HandoffSummary | undefined;
+  const atomicity = handoff?.atomicityInvariant;
+
+  const allHeld =
+    dagHeld && budgetHeld && (atomicity === undefined || atomicity.held);
+  const header = allHeld
+    ? "**Invariants:** all three hold on the snapshotted runs."
+    : "**Invariants:** one or more violated — see the per-recipe sections below.";
+  const bullets: string[] = [header, ""];
+  bullets.push(
+    dagHeld
+      ? `- DAG-placement: **PASS** (${dagEventsInPlace}/${dagEventsChecked} trace events across ${dagRunsChecked} runs land in the expected yield-tx DAG)`
+      : `- DAG-placement: **FAIL** (${dagViolatingRuns}/${dagRunsChecked} runs violated; ${dagEventsInPlace}/${dagEventsChecked} events in expected place)`,
+  );
+  if (budgetRunsChecked > 0) {
+    bullets.push(
+      budgetHeld
+        ? `- Budget (NEP-519 200-block timeout): **PASS** (${budgetRunsInRange}/${budgetRunsChecked} runs inside the expected block window)`
+        : `- Budget: **FAIL** (${budgetRunsOutOfRange}/${budgetRunsChecked} runs outside the expected block window)`,
+    );
+  }
+  if (atomicity && atomicity.runsChecked > 0) {
+    bullets.push(
+      atomicity.held
+        ? `- Atomicity (Recipe 4): **PASS** (${atomicity.runsAtomicallyHeld}/${atomicity.runsChecked} runs: each snapshotted Transfer matches recipient + amount + succeeded)`
+        : `- Atomicity (Recipe 4): **FAIL** (${atomicity.violations.length}/${atomicity.runsChecked} runs)`,
+    );
+  }
+  return bullets;
+}
+
+// Emits a line only when one or more runs had a degraded snapshot. A
+// complete snapshot is the typical case; the line would be noise.
+function snapshotHealthLine(s: RecipeSummary): string | null {
+  let partial = 0;
+  let failed = 0;
+  for (const r of s.runs) {
+    const overall = r.snapshotStatus?.overall ?? "complete";
+    if (overall === "partial") partial++;
+    else if (overall === "failed") failed++;
+  }
+  const degraded = partial + failed;
+  if (degraded === 0) return null;
+  const parts: string[] = [];
+  if (partial > 0) parts.push(`partial=${partial}`);
+  if (failed > 0) parts.push(`failed=${failed}`);
+  return `- snapshots: ${degraded}/${s.runs.length} degraded (${parts.join(", ")}) — affected cells render as **snapshot failed**`;
+}
+
+function dagViolationsTable(recipe: RecipeSummary["recipe"], dag: DagInvariantSummary): string {
+  const rows = dag.violations.map((v) => {
+    const runLabel =
+      recipe === "handoff" && v.mode
+        ? `${v.mode}-${v.runIndex.toString().padStart(2, "0")}`
+        : v.runIndex.toString().padStart(2, "0");
+    return `| ${runLabel} | \`${v.event}\` | ${v.expected} | ${v.actual ?? "no snapshotted tx"} |`;
+  });
+  return [
+    "**DAG-placement violations:**",
+    "",
+    "| run | event | expected tx DAG | actual tx DAG |",
+    "|-----|-------|-----------------|---------------|",
+    ...rows,
+  ].join("\n");
+}
+
 function interpretRecipe(s: RecipeSummary): string {
   if (s.recipe === "basic") {
     return "Each run yields in tx1, persisting the YieldId under `basic:<name>` in contract state. `Promise::new_yield` schedules the callback receipt at yield time — it lives in tx1's DAG, waiting for input. tx2 reads the YieldId and calls `yield_id.resume(...)`, which delivers the payload to that already-scheduled receipt; the callback executes and emits `recipe_resolved_ok`, still inside tx1's DAG. `resume→callback` is typically 1–2 blocks, reflecting how quickly the runtime picks up the waiting receipt after resume lands.";
@@ -154,6 +345,10 @@ export function writeReport(): string {
     `Generated by \`scripts/demo.sh report\` after running the four recipes on ${networkLabel}. Each recipe section lists the runs, links to their transactions on ${EXPLORER_BASE}, and reports the observable block-level lifecycle.`,
   );
   lines.push("");
+  lines.push("## Invariants at a glance");
+  lines.push("");
+  for (const l of topLineInvariantBadge(summaries)) lines.push(l);
+  lines.push("");
   lines.push("## Accounts");
   lines.push("");
   for (const [role, id] of Object.entries(ACCOUNTS)) {
@@ -166,9 +361,39 @@ export function writeReport(): string {
     lines.push(`## ${heading(s.recipe)}`);
     lines.push("");
     lines.push(aggBlock(s));
+    lines.push(dagInvariantLine(s.dagInvariant));
+    if (s.recipe === "timeout") {
+      const line = budgetInvariantLine(s.budgetInvariant);
+      if (line) lines.push(line);
+    }
+    if (s.recipe === "handoff") {
+      const budgetLine = budgetInvariantLine(s.budgetInvariant);
+      if (budgetLine) lines.push(budgetLine);
+      lines.push(atomicityInvariantLine(s.atomicityInvariant));
+    }
+    const snapLine = snapshotHealthLine(s);
+    if (snapLine) lines.push(snapLine);
     lines.push("");
     lines.push(runsTable(s));
     lines.push("");
+    if (!s.dagInvariant.held) {
+      lines.push(dagViolationsTable(s.recipe, s.dagInvariant));
+      lines.push("");
+    }
+    if (s.recipe === "timeout" && !s.budgetInvariant.held && s.budgetInvariant.runsOutOfRange > 0) {
+      lines.push(budgetViolationsTable(s.budgetInvariant));
+      lines.push("");
+    }
+    if (s.recipe === "handoff") {
+      if (!s.budgetInvariant.held && s.budgetInvariant.runsOutOfRange > 0) {
+        lines.push(budgetViolationsTable(s.budgetInvariant));
+        lines.push("");
+      }
+      if (!s.atomicityInvariant.held && s.atomicityInvariant.violations.length > 0) {
+        lines.push(atomicityViolationsTable(s.atomicityInvariant));
+        lines.push("");
+      }
+    }
     lines.push(`**Interpretation:** ${interpretRecipe(s)}`);
     lines.push("");
   }
@@ -189,7 +414,7 @@ export function writeReport(): string {
   lines.push("```");
   lines.push("");
   lines.push(
-    `Every tx hash above links to ${EXPLORER_BASE}, so each lifecycle claim is independently verifiable from the public chain. Sibling \`run-NN.onchain.json\` files capture the same data locally (full receipt DAGs, blocks, chunks) for offline reanalysis.`,
+    `Every tx hash above links to ${EXPLORER_BASE}, so each lifecycle claim is independently verifiable from the public chain. Sibling \`run-NN.onchain.json\` files snapshot the same data locally (full receipt DAGs, blocks, chunks) for offline reanalysis.`,
   );
   lines.push("");
 

@@ -1,17 +1,17 @@
-// On-chain capture. For each recipe run we fetch the receipt DAGs for
+// On-chain snapshot. For each recipe run we fetch the receipt DAGs for
 // every broadcast tx (yield + resume for basic/chained; just yield for
 // timeout), plus every block and chunk referenced by those DAGs. The
 // result is written as `run-NN.onchain.json` alongside the raw artifact.
 //
-// Why capture locally at all: FastNEAR's archival retention is finite;
-// runs captured today remain reanalyzable from the local JSON even if
-// the endpoint ages them out. The tx hashes remain the independent-
-// verification handle via public block explorers; the local capture is
+// Why snapshot locally at all: FastNEAR's archival retention is finite;
+// runs snapshotted today remain reanalyzable from the local JSON even
+// if the endpoint ages them out. The tx hashes remain the independent-
+// verification handle via public block explorers; the local snapshot is
 // the convenience handle.
 //
-// Unlike the earlier thesis-demo capture, there is no `stateSeries` here.
-// Recipes don't probe a third-party contract's state — their observable
-// effects are all in trace events embedded in the captured receipts.
+// The sibling smart-account-contract uses "snapshot" for the on-chain
+// view frozen at a point in time; we borrow that vocabulary here so the
+// two repos read cleanly together.
 
 import { writeFileSync } from "node:fs";
 
@@ -26,19 +26,39 @@ import {
   type TxStatusResult,
 } from "./rpc.js";
 
-export interface CapturedTx {
+export interface SnapshotTx {
   role: string;
   hash: string;
   signer: string;
 }
 
-export interface OnchainCapture {
-  capturedAt: string;
+// Aggregate snapshot health, so a stale "n/a" cell downstream can be
+// told apart from "not applicable" (fine) vs "RPC gave up" (which the
+// reader should know about).
+//   complete — every txStatus / block / chunk fetch succeeded
+//   partial  — some non-yield fetches failed; audit still runs but
+//              some derived fields may be null
+//   failed   — the yield tx itself couldn't be fetched; the audit can't
+//              reconstruct the lifecycle from this snapshot
+export interface SnapshotStatus {
+  overall: "complete" | "partial" | "failed";
+  txStatusFailures: string[]; // role names whose txStatus returned null
+  blockFailures: string[]; // block hashes whose fetch threw
+  chunkFailures: string[]; // chunk hashes whose fetch threw
+}
+
+export interface OnchainSnapshot {
+  snapshotAt: string;
   network: "testnet" | "mainnet";
   rpcEndpoints: { send: string; archival: string };
   chainId: string;
   protocolVersion: number | null;
-  latestBlockAtCaptureHeight: number | null;
+  latestBlockAtSnapshotHeight: number | null;
+
+  // See SnapshotStatus above. Fields in older on-disk snapshots may be
+  // missing; consumers should default a missing snapshotStatus to
+  // { overall: "complete", ...: [] } for backward compatibility.
+  snapshotStatus: SnapshotStatus;
 
   // tx DAGs keyed by role (e.g. "yield", "resume"). Recipes use stable
   // role names so the audit can reconstruct lifecycle regardless of
@@ -55,7 +75,7 @@ async function safeTxStatus(hash: string, signer: string): Promise<TxStatusResul
   try {
     return await txStatus(hash, signer);
   } catch (e) {
-    process.stderr.write(`[capture]   txStatus ${hash.slice(0, 10)}: ${(e as Error).message}\n`);
+    process.stderr.write(`[snapshot]   txStatus ${hash.slice(0, 10)}: ${(e as Error).message}\n`);
     return null;
   }
 }
@@ -70,13 +90,19 @@ function collectReceiptIdsFromTx(tx: TxStatusResult, out: Set<string>): void {
   for (const o of tx.receipts_outcome) out.add(o.id);
 }
 
-export async function captureOnChain(txs: CapturedTx[]): Promise<OnchainCapture> {
+export async function snapshotOnChain(txs: SnapshotTx[]): Promise<OnchainSnapshot> {
   const status = await fetchStatus(RPC_AUDIT).catch(() => null);
+
+  const txStatusFailures: string[] = [];
+  const blockFailures: string[] = [];
+  const chunkFailures: string[] = [];
 
   // Per-role tx DAGs.
   const txStatusByRole: Record<string, TxStatusResult | null> = {};
   for (const t of txs) {
-    txStatusByRole[t.role] = await safeTxStatus(t.hash, t.signer);
+    const result = await safeTxStatus(t.hash, t.signer);
+    txStatusByRole[t.role] = result;
+    if (result === null) txStatusFailures.push(t.role);
   }
 
   // Collect block hashes and receipt IDs referenced by any DAG.
@@ -94,7 +120,8 @@ export async function captureOnChain(txs: CapturedTx[]): Promise<OnchainCapture>
     try {
       blocks[h] = await blockByHash(h);
     } catch (e) {
-      process.stderr.write(`[capture]   block ${h.slice(0, 10)}: ${(e as Error).message}\n`);
+      process.stderr.write(`[snapshot]   block ${h.slice(0, 10)}: ${(e as Error).message}\n`);
+      blockFailures.push(h);
     }
   }
 
@@ -113,24 +140,33 @@ export async function captureOnChain(txs: CapturedTx[]): Promise<OnchainCapture>
           chunks[chunkMeta.chunk_hash] = chunk;
         }
       } catch (e) {
-        process.stderr.write(`[capture]   chunk ${chunkMeta.chunk_hash.slice(0, 10)}: ${(e as Error).message}\n`);
+        process.stderr.write(`[snapshot]   chunk ${chunkMeta.chunk_hash.slice(0, 10)}: ${(e as Error).message}\n`);
+        chunkFailures.push(chunkMeta.chunk_hash);
       }
     }
   }
 
+  // yield is the audit's root; any other failure is recoverable-ish.
+  const overall: SnapshotStatus["overall"] = txStatusFailures.includes("yield")
+    ? "failed"
+    : txStatusFailures.length + blockFailures.length + chunkFailures.length > 0
+      ? "partial"
+      : "complete";
+
   return {
-    capturedAt: new Date().toISOString(),
+    snapshotAt: new Date().toISOString(),
     network: NEAR_NETWORK,
     rpcEndpoints: { send: RPC_SEND, archival: RPC_AUDIT },
     chainId: status?.chain_id ?? "unknown",
     protocolVersion: status?.protocol_version ?? null,
-    latestBlockAtCaptureHeight: status?.sync_info?.latest_block_height ?? null,
+    latestBlockAtSnapshotHeight: status?.sync_info?.latest_block_height ?? null,
+    snapshotStatus: { overall, txStatusFailures, blockFailures, chunkFailures },
     txStatus: txStatusByRole,
     blocks,
     chunks,
   };
 }
 
-export function writeOnchainCapture(path: string, capture: OnchainCapture): void {
-  writeFileSync(path, JSON.stringify(capture, null, 2));
+export function writeOnchainSnapshot(path: string, snapshot: OnchainSnapshot): void {
+  writeFileSync(path, JSON.stringify(snapshot, null, 2));
 }

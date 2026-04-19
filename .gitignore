@@ -4,7 +4,7 @@ scripts/dist/
 scripts/package-lock.json
 .DS_Store
 
-# artifacts/ partitions per-network captures. testnet is committed as
+# artifacts/ partitions per-network snapshots. testnet is committed as
 # durable proof of the recipe runs (full receipt DAGs + blocks + chunks
 # so offline reanalysis doesn't need archival RPC). mainnet is not used
 # by this repo and stays ignored.

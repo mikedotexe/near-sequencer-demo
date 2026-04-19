@@ -23,7 +23,7 @@ import {
 } from "../config.js";
 import { connectSender, viewAtBlock } from "../rpc.js";
 import { makeDirectSender, type DirectSender } from "../tx.js";
-import { writeRawAndCapture } from "./common.js";
+import { writeRawAndSnapshot } from "./common.js";
 import type { RawChainedArtifact } from "./types.js";
 
 const YIELD_TO_RESUME_DELAY_MS = 2000;
@@ -96,7 +96,7 @@ export async function runChainedRepeated(repeat: number): Promise<RawChainedArti
     process.stderr.write(`[run chained] run ${i}/${repeat}...\n`);
     const delta = i % 2 === 1 ? 1 : -1;
     const raw = await runOnce(sender, i, delta);
-    await writeRawAndCapture(raw, [
+    await writeRawAndSnapshot(raw, [
       { role: "yield", hash: raw.yieldTxHash, signer: raw.signer },
       { role: "resume", hash: raw.resumeTxHash, signer: raw.signer },
     ]);

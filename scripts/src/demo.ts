@@ -20,6 +20,7 @@ import { auditRecipe } from "./audit.js";
 import { summarizeAll } from "./aggregate.js";
 import { writeReport } from "./report.js";
 import { explainDag } from "./explain-dag.js";
+import { translate, parseRunFilter } from "./translate.js";
 import { assertChainIdMatches, connectSender, fetchStatus } from "./rpc.js";
 import { parseRecipeName, type RecipeName } from "./recipes/types.js";
 
@@ -38,10 +39,12 @@ function usage(): void {
       "  run <basic|timeout|chained|handoff> [--repeat N] [--mode claim|timeout (handoff only)]",
       "                                       broadcast a recipe flow N times (default 1)",
       "  audit <basic|timeout|chained|handoff>  parse onchain.json + trace events into per-run audit.json",
-      "  explain-dag <basic|timeout|chained|handoff> [run]  print trace-event placement by tx role for a captured run",
+      "  explain-dag <basic|timeout|chained|handoff> [run]  print trace-event placement by tx role for a snapshotted run",
       "  aggregate                            summarize per-recipe stats",
       "  report                               write artifacts/<network>/report.md",
-      "  all                                  build + deploy + run each recipe + audit + aggregate + report",
+      "  translate [<recipe>] [--run N|latest|all]",
+      "                                       regenerate viz/data/recipe-*-live-NN.json from snapshotted runs",
+      "  all                                  build + deploy + run each recipe + audit + aggregate + report + translate",
       "  clean [--i-know-this-is-<network>]   delete recipes + counter accounts and wipe artifacts/<network>/",
       "",
     ].join("\n"),
@@ -158,31 +161,89 @@ async function runByRecipe(recipe: RecipeName, repeat: number): Promise<void> {
   }
 }
 
+// Counts violations across all invariants. An "evaluable but failing"
+// budget check counts as 1; inconclusive checks (no snapshot) don't
+// count. Same logic for atomicity.
+interface InvariantCounts {
+  dag: number;
+  budget: number;
+  atomicity: number;
+}
+
+interface AuditLike {
+  dagInvariantViolations: unknown[];
+  budgetInvariant?: { held: boolean; evaluable: boolean };
+  atomicityInvariant?: { held: boolean; evaluable: boolean };
+}
+
+function countViolations(audits: AuditLike[]): InvariantCounts {
+  let dag = 0;
+  let budget = 0;
+  let atomicity = 0;
+  for (const a of audits) {
+    dag += a.dagInvariantViolations.length;
+    if (a.budgetInvariant && a.budgetInvariant.evaluable && !a.budgetInvariant.held) budget++;
+    if (a.atomicityInvariant && a.atomicityInvariant.evaluable && !a.atomicityInvariant.held) {
+      atomicity++;
+    }
+  }
+  return { dag, budget, atomicity };
+}
+
+function invariantTotal(counts: InvariantCounts): number {
+  return counts.dag + counts.budget + counts.atomicity;
+}
+
 async function cmdAudit(rest: string[]): Promise<void> {
   const recipe = parseRecipeName(rest[0]);
-  await auditRecipe(recipe);
+  const audits = await auditRecipe(recipe);
+  const v = countViolations(audits);
+  if (invariantTotal(v) > 0) {
+    const parts: string[] = [];
+    if (v.dag > 0) parts.push(`dag=${v.dag}`);
+    if (v.budget > 0) parts.push(`budget=${v.budget}`);
+    if (v.atomicity > 0) parts.push(`atomicity=${v.atomicity}`);
+    process.stderr.write(
+      `[audit ${recipe}] !! invariant(s) violated across ${audits.length} runs (${parts.join(", ")}) — see per-run audit JSON and artifacts/<network>/report.md\n`,
+    );
+    process.exit(1);
+  }
 }
 
 async function cmdAggregate(): Promise<void> {
   const summaries = summarizeAll();
   for (const s of summaries) {
+    const dag = s.dagInvariant.held
+      ? `dag=PASS(${s.dagInvariant.eventsInExpectedPlace}/${s.dagInvariant.eventsChecked})`
+      : `dag=VIOLATED(${s.dagInvariant.runsWithViolations}/${s.dagInvariant.runsChecked} runs)`;
     if (s.recipe === "basic") {
       process.stderr.write(
-        `[aggregate] ${s.recipe}: runs=${s.runCount} ok=${s.resolvedOkCount} yield→resume median=${s.blocksFromYieldToResume.median ?? "n/a"}\n`,
+        `[aggregate] ${s.recipe}: runs=${s.runCount} ok=${s.resolvedOkCount} yield→resume median=${s.blocksFromYieldToResume.median ?? "n/a"} ${dag}\n`,
       );
     } else if (s.recipe === "timeout") {
+      const budget = s.budgetInvariant.held
+        ? `budget=PASS(${s.budgetInvariant.runsInRange}/${s.budgetInvariant.runsChecked})`
+        : `budget=VIOLATED(${s.budgetInvariant.runsOutOfRange}/${s.budgetInvariant.runsChecked})`;
       process.stderr.write(
-        `[aggregate] ${s.recipe}: runs=${s.runCount} fired=${s.timeoutFiredCount} yield→callback median=${s.blocksFromYieldToCallback.median ?? "n/a"}\n`,
+        `[aggregate] ${s.recipe}: runs=${s.runCount} fired=${s.timeoutFiredCount} yield→callback median=${s.blocksFromYieldToCallback.median ?? "n/a"} ${dag} ${budget}\n`,
       );
     } else if (s.recipe === "chained") {
       process.stderr.write(
-        `[aggregate] ${s.recipe}: runs=${s.runCount} ok=${s.resolvedOkCount} observed=${s.observedValues.join(",")}\n`,
+        `[aggregate] ${s.recipe}: runs=${s.runCount} ok=${s.resolvedOkCount} observed=${s.observedValues.join(",")} ${dag}\n`,
       );
     } else {
       // handoff
+      const budget = s.budgetInvariant.runsChecked === 0
+        ? "budget=n/a(no timeout runs)"
+        : s.budgetInvariant.held
+          ? `budget=PASS(${s.budgetInvariant.runsInRange}/${s.budgetInvariant.runsChecked})`
+          : `budget=VIOLATED(${s.budgetInvariant.runsOutOfRange}/${s.budgetInvariant.runsChecked})`;
+      const atomicity = s.atomicityInvariant.held
+        ? `atomicity=PASS(${s.atomicityInvariant.runsAtomicallyHeld}/${s.atomicityInvariant.runsChecked})`
+        : `atomicity=VIOLATED(${s.atomicityInvariant.violations.length}/${s.atomicityInvariant.runsChecked})`;
       process.stderr.write(
         `[aggregate] ${s.recipe}: runs=${s.runCount} (claim=${s.claimCount} timeout=${s.timeoutCount}) settled_ok=${s.settledOkCount} ` +
-          `claim y→settle median=${s.claimYieldToSettle.median ?? "n/a"} timeout y→settle median=${s.timeoutYieldToSettle.median ?? "n/a"}\n`,
+          `claim y→settle median=${s.claimYieldToSettle.median ?? "n/a"} timeout y→settle median=${s.timeoutYieldToSettle.median ?? "n/a"} ${dag} ${budget} ${atomicity}\n`,
       );
     }
   }
@@ -193,6 +254,14 @@ async function cmdReport(): Promise<void> {
   process.stderr.write(`[report] wrote ${path}\n`);
 }
 
+async function cmdTranslate(rest: string[]): Promise<void> {
+  const recipeArg = rest.find((a, i) => !a.startsWith("--") && rest[i - 1] !== "--run");
+  const recipes = recipeArg ? [parseRecipeName(recipeArg)] : undefined;
+  const run = parseRunFilter(rest);
+  const { generated } = translate({ recipes, run });
+  process.stderr.write(`[translate] wrote ${generated.length} timeline file(s)\n`);
+}
+
 async function cmdAll(): Promise<void> {
   await cmdBuild();
   await cmdDeploy();
@@ -201,11 +270,36 @@ async function cmdAll(): Promise<void> {
   await runChainedRepeated(3);
   await runHandoffRepeated("claim", 2);
   await runHandoffRepeated("timeout", 1);
+  const totals: InvariantCounts = { dag: 0, budget: 0, atomicity: 0 };
+  let totalRuns = 0;
   for (const recipe of ["basic", "timeout", "chained", "handoff"] as const) {
-    await auditRecipe(recipe);
+    const audits = await auditRecipe(recipe);
+    const v = countViolations(audits);
+    totals.dag += v.dag;
+    totals.budget += v.budget;
+    totals.atomicity += v.atomicity;
+    totalRuns += audits.length;
   }
   await cmdAggregate();
   await cmdReport();
+  try {
+    const { generated } = translate({ run: "all" });
+    process.stderr.write(`[all] translated ${generated.length} timeline file(s)\n`);
+  } catch (e) {
+    process.stderr.write(`[all] translate failed: ${(e as Error).message}\n`);
+    // Keep going so the report is still produced; re-throw at end.
+    process.exitCode = 1;
+  }
+  if (invariantTotal(totals) > 0) {
+    const parts: string[] = [];
+    if (totals.dag > 0) parts.push(`dag=${totals.dag}`);
+    if (totals.budget > 0) parts.push(`budget=${totals.budget}`);
+    if (totals.atomicity > 0) parts.push(`atomicity=${totals.atomicity}`);
+    process.stderr.write(
+      `[all] !! invariant(s) violated across ${totalRuns} runs (${parts.join(", ")}) — see artifacts/<network>/report.md\n`,
+    );
+    process.exit(1);
+  }
 }
 
 async function cmdClean(rest: string[]): Promise<void> {
@@ -249,6 +343,9 @@ async function main(): Promise<void> {
         break;
       case "report":
         await cmdReport();
+        break;
+      case "translate":
+        await cmdTranslate(rest);
         break;
       case "all":
         await cmdAll();

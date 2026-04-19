@@ -1,21 +1,21 @@
-// Prints the DAG-placement of trace events for a captured run, making
+// Prints the DAG-placement of trace events for a snapshotted run, making
 // the empirical finding "callback trace events live in the yield tx's
-// DAG" reproducible from any captured `run-NN.onchain.json` without
+// DAG" reproducible from any snapshotted `run-NN.onchain.json` without
 // requiring the reader to know jq.
 //
 // Usage (from demo.ts): explain-dag <basic|timeout|chained|handoff> [run]
 // where `run` is a 1-based index (1, 01, "2") defaulting to the first
-// captured run in the recipe directory. For handoff, a captured run
-// may be named run-claim-NN or run-timeout-NN — this tool picks the
-// first in sort order unless a specific index is provided (and will
-// need a small tweak if you want to select by mode; easier is to
+// snapshotted run in the recipe directory. For handoff, a snapshotted
+// run may be named run-claim-NN or run-timeout-NN — this tool picks
+// the first in sort order unless a specific index is provided (and
+// will need a small tweak if you want to select by mode; easier is to
 // run the tool with --raw pointing at the specific run.raw.json).
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { ARTIFACTS_DIR } from "./config.js";
-import type { OnchainCapture } from "./capture.js";
+import type { OnchainSnapshot } from "./snapshot.js";
 import { parseRecipeName, type RecipeName } from "./recipes/types.js";
 
 interface TraceLogBody {
@@ -41,11 +41,11 @@ interface Placement {
   name: string;
 }
 
-// Resolve a capture file for the given recipe + optional run hint.
+// Resolve a snapshot file for the given recipe + optional run hint.
 // Handoff files are named run-{mode}-NN; other recipes use run-NN. If
 // runArg is "claim-01" / "timeout-02" that's used verbatim for handoff;
 // if it's a number, the first matching run of any mode is chosen.
-function resolveCapturePath(recipe: RecipeName, runArg: string | undefined): string {
+function resolveSnapshotPath(recipe: RecipeName, runArg: string | undefined): string {
   const dir = join(ARTIFACTS_DIR, `recipe-${recipe}`);
   if (runArg && /^(claim|timeout)-\d+$/.test(runArg)) {
     return join(dir, `run-${runArg}.onchain.json`);
@@ -64,26 +64,29 @@ function resolveCapturePath(recipe: RecipeName, runArg: string | undefined): str
         if (existsSync(p)) return p;
       }
     }
-    throw new Error(`no capture for run ${runArg} in ${dir}`);
+    throw new Error(`no snapshot for run ${runArg} in ${dir}`);
   }
   // No run specified — pick the first in sort order.
   const candidates = readdirSync(dir)
     .filter((f) => /\.onchain\.json$/.test(f))
     .sort();
-  if (candidates.length === 0) throw new Error(`no captures in ${dir}`);
+  if (candidates.length === 0) throw new Error(`no snapshots in ${dir}`);
   return join(dir, candidates[0]!);
 }
 
-function loadCapture(recipe: RecipeName, runArg: string | undefined): { capture: OnchainCapture; path: string } {
-  const path = resolveCapturePath(recipe, runArg);
-  if (!existsSync(path)) throw new Error(`no capture at ${path}`);
-  return { capture: JSON.parse(readFileSync(path, "utf8")) as OnchainCapture, path };
+function loadSnapshot(
+  recipe: RecipeName,
+  runArg: string | undefined,
+): { snapshot: OnchainSnapshot; path: string } {
+  const path = resolveSnapshotPath(recipe, runArg);
+  if (!existsSync(path)) throw new Error(`no snapshot at ${path}`);
+  return { snapshot: JSON.parse(readFileSync(path, "utf8")) as OnchainSnapshot, path };
 }
 
-function scanTraceEvents(capture: OnchainCapture, recipe: RecipeName): Placement[] {
-  const blocksByHash = new Map(Object.entries(capture.blocks));
+function scanTraceEvents(snapshot: OnchainSnapshot, recipe: RecipeName): Placement[] {
+  const blocksByHash = new Map(Object.entries(snapshot.blocks));
   const placements: Placement[] = [];
-  for (const [role, tx] of Object.entries(capture.txStatus)) {
+  for (const [role, tx] of Object.entries(snapshot.txStatus)) {
     if (!tx) continue;
     for (const outcome of tx.receipts_outcome) {
       for (const log of outcome.outcome.logs) {
@@ -102,7 +105,7 @@ function scanTraceEvents(capture: OnchainCapture, recipe: RecipeName): Placement
   return placements;
 }
 
-function expectedPlacement(recipe: RecipeName, capture: OnchainCapture): Record<string, string> {
+function expectedPlacement(recipe: RecipeName, snapshot: OnchainSnapshot): Record<string, string> {
   if (recipe === "basic") {
     return { recipe_yielded: "yield", recipe_resumed: "resume", recipe_resolved_ok: "yield" };
   }
@@ -118,9 +121,9 @@ function expectedPlacement(recipe: RecipeName, capture: OnchainCapture): Record<
       recipe_resolved_ok: "yield",
     };
   }
-  // handoff: infer mode from whether a resume tx was captured. Timeout
-  // mode captures only the yield tx.
-  const isTimeout = !capture.txStatus.resume;
+  // handoff: infer mode from whether a resume tx was snapshotted. Timeout
+  // mode snapshots only the yield tx.
+  const isTimeout = !snapshot.txStatus.resume;
   if (isTimeout) {
     return {
       recipe_yielded: "yield",
@@ -144,17 +147,17 @@ function padCell(s: string, width: number): string {
 
 export function explainDag(recipeArg: string | undefined, runArg: string | undefined): void {
   const recipe = parseRecipeName(recipeArg);
-  const { capture, path } = loadCapture(recipe, runArg);
+  const { snapshot, path } = loadSnapshot(recipe, runArg);
   const runLabel = path.match(/run-([^.]+)\.onchain\.json$/)?.[1] ?? "?";
 
   process.stdout.write(`recipe: ${recipe}  run: ${runLabel}\n`);
-  process.stdout.write(`capture: ${path}\n\n`);
+  process.stdout.write(`snapshot: ${path}\n\n`);
 
   // Tx-role header: hashes + block heights.
-  const blocksByHash = new Map(Object.entries(capture.blocks));
-  for (const [role, tx] of Object.entries(capture.txStatus)) {
+  const blocksByHash = new Map(Object.entries(snapshot.blocks));
+  for (const [role, tx] of Object.entries(snapshot.txStatus)) {
     if (!tx) {
-      process.stdout.write(`${padCell(role + " tx", 10)} (capture missing)\n`);
+      process.stdout.write(`${padCell(role + " tx", 10)} (snapshot missing)\n`);
       continue;
     }
     const block = blocksByHash.get(tx.transaction_outcome.block_hash);
@@ -165,8 +168,8 @@ export function explainDag(recipeArg: string | undefined, runArg: string | undef
   process.stdout.write("\n");
 
   // Placements table.
-  const placements = scanTraceEvents(capture, recipe);
-  const expected = expectedPlacement(recipe, capture);
+  const placements = scanTraceEvents(snapshot, recipe);
+  const expected = expectedPlacement(recipe, snapshot);
   const evWidth = Math.max(
     "event".length,
     ...placements.map((p) => p.ev.length),
@@ -198,7 +201,7 @@ export function explainDag(recipeArg: string | undefined, runArg: string | undef
       violations.push(`${ev}: expected in ${exp} tx DAG, found in ${found.role}`);
     }
     if (!found) {
-      violations.push(`${ev}: expected in ${exp} tx DAG, not found in any captured tx`);
+      violations.push(`${ev}: expected in ${exp} tx DAG, not found in any snapshotted tx`);
     }
   }
   for (const extra of extras) {
