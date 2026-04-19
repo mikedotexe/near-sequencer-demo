@@ -57,6 +57,19 @@
     "runsNotEvaluable": 0,
     "violations": []
   },
+  "shardInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsOnContractShard": 3,
+    "runsWithWrongShard": 0,
+    "runsNotEvaluable": 0,
+    "contractShards": [
+      4
+    ],
+    "totalReceiptsChecked": 3,
+    "totalReceiptsOnContractShard": 3,
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "handoff",
@@ -105,6 +118,14 @@
           "depositYocto": "10000000000000000000000",
           "succeeded": true
         }
+      },
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
       }
     },
     {
@@ -154,6 +175,14 @@
           "depositYocto": "10000000000000000000000",
           "succeeded": true
         }
+      },
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
       }
     },
     {
@@ -202,6 +231,14 @@
           "depositYocto": "10000000000000000000000",
           "succeeded": true
         }
+      },
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
       },
       "budgetInvariant": {
         "held": true,

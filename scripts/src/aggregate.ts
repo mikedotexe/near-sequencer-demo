@@ -13,6 +13,8 @@ import type {
   BudgetInvariantResult,
   ChainedAudit,
   HandoffAudit,
+  ShardInvariantResult,
+  ShardInvariantViolation,
   TimeoutAudit,
   TxRole,
 } from "./audit.js";
@@ -179,6 +181,83 @@ export function computeAtomicityInvariant(runs: HandoffAudit[]): AtomicityInvari
   };
 }
 
+// Per-recipe roll-up of the shard-placement invariant. Per-run check
+// lives in audit.ts's computeShardPlacement: every callback-emitting
+// receipt must execute on the contract's home shard (the shard that
+// owns the `recipes.*` account). On multi-shard networks (testnet ~12,
+// mainnet 4–6), resume txs are typically signed on a different shard
+// than the contract — the invariant is what makes cross-shard receipt
+// forwarding a correctness-preserving operation.
+export interface ShardInvariantSummary {
+  held: boolean;
+  runsChecked: number;          // runs with an evaluable shard check
+  runsOnContractShard: number;  // all callback receipts on contract's shard
+  runsWithWrongShard: number;   // at least one callback receipt off contract's shard
+  runsNotEvaluable: number;     // snapshot lacked a contract receipt to anchor
+  contractShards: number[];     // observed home shards across the run set
+  totalReceiptsChecked: number;
+  totalReceiptsOnContractShard: number;
+  violations: Array<{
+    runIndex: number;
+    mode?: "claim" | "timeout";
+    contractShard: number | null;
+    wrongShardReceipts: ShardInvariantViolation[];
+  }>;
+}
+
+export interface ShardInputRun {
+  runIndex: number;
+  mode?: "claim" | "timeout";
+  shardInvariant?: ShardInvariantResult;
+}
+
+export function computeShardInvariant(runs: ShardInputRun[]): ShardInvariantSummary {
+  let runsOnContractShard = 0;
+  let runsWithWrongShard = 0;
+  let runsNotEvaluable = 0;
+  let totalReceiptsChecked = 0;
+  let totalReceiptsOnContractShard = 0;
+  const contractShards = new Set<number>();
+  const violations: ShardInvariantSummary["violations"] = [];
+  for (const r of runs) {
+    const s = r.shardInvariant;
+    if (!s) {
+      runsNotEvaluable++;
+      continue;
+    }
+    if (!s.evaluable) {
+      runsNotEvaluable++;
+      continue;
+    }
+    if (s.contractShard !== null) contractShards.add(s.contractShard);
+    totalReceiptsChecked += s.receiptsChecked;
+    totalReceiptsOnContractShard += s.receiptsChecked - s.wrongShardReceipts.length;
+    if (s.held) {
+      runsOnContractShard++;
+    } else {
+      runsWithWrongShard++;
+      violations.push({
+        runIndex: r.runIndex,
+        ...(r.mode ? { mode: r.mode } : {}),
+        contractShard: s.contractShard,
+        wrongShardReceipts: s.wrongShardReceipts,
+      });
+    }
+  }
+  const runsChecked = runsOnContractShard + runsWithWrongShard;
+  return {
+    held: runsWithWrongShard === 0 && runsChecked > 0,
+    runsChecked,
+    runsOnContractShard,
+    runsWithWrongShard,
+    runsNotEvaluable,
+    contractShards: [...contractShards].sort((a, b) => a - b),
+    totalReceiptsChecked,
+    totalReceiptsOnContractShard,
+    violations,
+  };
+}
+
 export function computeDagInvariant(audits: Audit[]): DagInvariantSummary {
   let runsWithViolations = 0;
   let eventsChecked = 0;
@@ -217,6 +296,7 @@ export interface BasicSummary {
   blocksFromYieldToResume: StatRange;
   blocksFromResumeToCallback: StatRange;
   dagInvariant: DagInvariantSummary;
+  shardInvariant: ShardInvariantSummary;
   runs: BasicAudit[];
 }
 
@@ -227,6 +307,7 @@ export interface TimeoutSummary {
   blocksFromYieldToCallback: StatRange;
   dagInvariant: DagInvariantSummary;
   budgetInvariant: BudgetInvariantSummary;
+  shardInvariant: ShardInvariantSummary;
   runs: TimeoutAudit[];
 }
 
@@ -239,6 +320,7 @@ export interface ChainedSummary {
   blocksFromDispatchToCallback: StatRange;
   observedValues: number[];
   dagInvariant: DagInvariantSummary;
+  shardInvariant: ShardInvariantSummary;
   runs: ChainedAudit[];
 }
 
@@ -260,6 +342,7 @@ export interface HandoffSummary {
   // counts evaluable timeout runs, not all runs).
   budgetInvariant: BudgetInvariantSummary;
   atomicityInvariant: AtomicityInvariantSummary;
+  shardInvariant: ShardInvariantSummary;
   runs: HandoffAudit[];
 }
 
@@ -287,6 +370,9 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
       blocksFromYieldToResume: stat(runs.map((r) => r.blocksFromYieldToResume)),
       blocksFromResumeToCallback: stat(runs.map((r) => r.blocksFromResumeToCallback)),
       dagInvariant: computeDagInvariant(runs),
+      shardInvariant: computeShardInvariant(
+        runs.map((r) => ({ runIndex: r.runIndex, shardInvariant: r.shardInvariant })),
+      ),
       runs,
     };
   } else if (recipe === "timeout") {
@@ -299,6 +385,9 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
       dagInvariant: computeDagInvariant(runs),
       budgetInvariant: computeBudgetInvariant(
         runs.map((r) => ({ runIndex: r.runIndex, budgetInvariant: r.budgetInvariant })),
+      ),
+      shardInvariant: computeShardInvariant(
+        runs.map((r) => ({ runIndex: r.runIndex, shardInvariant: r.shardInvariant })),
       ),
       runs,
     };
@@ -315,6 +404,9 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
         .map((r) => r.observedValue)
         .filter((v): v is number => v !== null),
       dagInvariant: computeDagInvariant(runs),
+      shardInvariant: computeShardInvariant(
+        runs.map((r) => ({ runIndex: r.runIndex, shardInvariant: r.shardInvariant })),
+      ),
       runs,
     };
   } else {
@@ -343,6 +435,13 @@ export function summarizeRecipe(recipe: RecipeName): RecipeSummary | null {
         })),
       ),
       atomicityInvariant: computeAtomicityInvariant(runs),
+      shardInvariant: computeShardInvariant(
+        runs.map((r) => ({
+          runIndex: r.runIndex,
+          mode: r.mode,
+          shardInvariant: r.shardInvariant,
+        })),
+      ),
       runs,
     };
   }

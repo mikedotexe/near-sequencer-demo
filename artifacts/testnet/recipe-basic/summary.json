@@ -22,6 +22,19 @@
     "eventsInExpectedPlace": 9,
     "violations": []
   },
+  "shardInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsOnContractShard": 3,
+    "runsWithWrongShard": 0,
+    "runsNotEvaluable": 0,
+    "contractShards": [
+      4
+    ],
+    "totalReceiptsChecked": 3,
+    "totalReceiptsOnContractShard": 3,
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "basic",
@@ -51,7 +64,15 @@
         "recipe_resumed": "resume",
         "recipe_resolved_ok": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
+      }
     },
     {
       "recipe": "basic",
@@ -81,7 +102,15 @@
         "recipe_resumed": "resume",
         "recipe_resolved_ok": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
+      }
     },
     {
       "recipe": "basic",
@@ -111,7 +140,15 @@
         "recipe_resumed": "resume",
         "recipe_resolved_ok": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
+      }
     }
   ]
 }

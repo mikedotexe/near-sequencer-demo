@@ -1,6 +1,6 @@
-# Three invariants of NEP-519 yield/resume
+# Four invariants of NEP-519 yield/resume
 
-The recipes in this repo make three specific claims about how NEAR's
+The recipes in this repo make four specific claims about how NEAR's
 [NEP-519 yield/resume](https://github.com/near/NEPs/blob/master/neps/nep-0519.md)
 primitive behaves. Each claim is machine-checked on every snapshotted
 run and surfaces on the top of
@@ -20,6 +20,7 @@ the same as runs accumulate; only the report's counts move.
 | 1 | DAG-placement | Callback trace events live in the yield tx's receipt DAG | all four recipes | [`scripts/src/audit.ts`](../scripts/src/audit.ts) `computeDagPlacement` |
 | 2 | Budget | Observed yield→callback delta lies in [200, 205] blocks | timeout + handoff-timeout | [`scripts/src/audit.ts`](../scripts/src/audit.ts) `checkBudget` |
 | 3 | Atomicity | Transfer receipt matches recipient + amount + SuccessValue | handoff | [`scripts/src/audit.ts`](../scripts/src/audit.ts) `checkAtomicity` |
+| 4 | Shard-placement | Callback-emitting receipts execute on the contract's home shard | all four recipes | [`scripts/src/audit.ts`](../scripts/src/audit.ts) `computeShardPlacement` |
 
 ## 1. DAG-placement
 
@@ -194,9 +195,95 @@ contract source. Recipe 4's value proposition — *one receipt carries
 both endings, no escrow table, no polling* — becomes citable only
 when every snapshotted run has receipts showing the claimed flow.
 
-## Why these three and not others
+## 4. Shard-placement
 
-The three chosen invariants cover the three distinguishable claim
+**Claim.** Every callback-emitting trace event — the same set covered
+by DAG-placement: `recipe_resolved_ok`, `recipe_resolved_err`,
+`recipe_dispatched`, `recipe_callback_observed`, `handoff_released`,
+`handoff_refunded` — executes on the shard that owns the recipes
+contract (the contract's **home shard**). Neither the resume-tx
+signer's shard nor chunk-production jitter can move a callback
+receipt off the contract's shard.
+
+**Derivation.** NEP-519 schedules the yielded callback receipt with
+`receiver_id = <recipes contract>`. In NEAR's sharded execution
+model, every receipt is executed on the shard that owns the
+receiver's account — this is protocol-level, not a configuration
+knob. The directly observable form of "receipt ran on the contract's
+shard" in the RPC's `EXPERIMENTAL_tx_status` output is
+`outcome.executor_id`, which is exactly the receiver that executed
+the receipt. So:
+
+1. The yield tx schedules the callback receipt on the contract's
+   home shard.
+2. When the resume tx fires (possibly signed by an account on a
+   different shard), it produces an Action Receipt delivering the
+   payload. That receipt is routed to the callback's shard before
+   the callback executes.
+3. The callback's own execution — where the trace logs are emitted —
+   happens on the home shard, and `outcome.executor_id` reports the
+   contract account.
+
+On a multi-shard network (testnet observed at ~12 shards; mainnet
+4–6 shards), cross-shard receipt forwarding is exercised precisely
+when the resume-tx signer and the contract hash to different shards.
+The invariant is what makes that cross-shard hop a correctness-
+preserving operation: only the payload crosses the shard boundary,
+the callback stays put.
+
+**What we verify empirically.** For each callback-emitting receipt
+outcome, `outcome.executor_id == <recipes contract>`. Under NEAR's
+shard-per-receiver semantics, this is equivalent to "the callback
+executed on the contract's home shard."
+
+We don't rely on `chunk.receipts[]` to locate the callback receipt,
+because yielded callbacks are delivered to their pre-scheduled
+receipts from the protocol's yielded-receipts queue — not the
+standard cross-shard routing path — so they don't appear in
+`chunk.receipts[]` at execution time. They do, however, carry an
+accurate `executor_id` in their outcome.
+
+**How the contract's home shard is reported.** For transparency, the
+audit also derives the home shard empirically from a receipt whose
+chunk IS locatable — typically the initial `signer → contract`
+action receipt from the yield tx, which appears in
+`chunk.receipts[]` at delivery time. The report shows this shard
+(e.g. "callbacks ran on contract shard 4") so the reader sees the
+topology explicitly. This derived value is informational and does
+not itself feed the held/failed decision.
+
+**Consequence of violation.** A callback receipt with
+`executor_id != <recipes contract>` would mean either:
+
+- The runtime re-routed a yielded receipt to a different account (a
+  protocol bug — should be impossible).
+- The contract unexpectedly re-routed the callback via a nested
+  cross-contract call (a contract bug — would also manifest as a
+  DAG-placement violation).
+- The audit's event-classification logic is wrong (a logic bug).
+
+All three are "stop and look" events. In practice, the invariant has
+held on every snapshotted testnet run.
+
+**Where it's checked.**
+[`scripts/src/audit.ts:computeShardPlacement`](../scripts/src/audit.ts).
+For each callback-emitting trace event, compares
+`outcome.executor_id` to the contract account. Per-run result stored
+as `shardInvariant`; aggregated by `computeShardInvariant` in
+`aggregate.ts`. Uses only data already captured in
+`run-NN.onchain.json` — no additional RPC calls.
+
+**Why this matters.** The DAG-placement invariant says "the yield tx
+is the root of the receipt tree." Shard-placement says "the receipt
+tree stays anchored to the contract's shard even when the tree's
+input comes from a different shard." Together they pin down the
+mental model that makes cross-shard yield/resume usage safe: the
+*where* of a callback is determined once, at yield time, and nothing
+in the resume path can move it.
+
+## Why these four and not others
+
+The four chosen invariants cover the four distinguishable claim
 layers the repo makes:
 
 - **Mechanic** — DAG-placement: "the yield tx is the root of the
@@ -204,6 +291,8 @@ layers the repo makes:
 - **Protocol** — Budget: "NEP-519's 200-block timeout is the
   observable reality, not just spec text."
 - **Value** — Atomicity: "Recipe 4 actually moves the money."
+- **Topology** — Shard-placement: "the receipt tree stays on the
+  contract's shard regardless of where its input arrives from."
 
 Candidates we considered and rejected:
 
@@ -235,3 +324,19 @@ Both are contention-specific; Volume 1 has no contention so they
 don't apply yet. The infrastructure (`checkX` + `computeXInvariant` +
 summary propagation + report rendering + CI grep) supports n
 invariants; adding two more is additive.
+
+## Testnet and where mainnet would strengthen the evidence
+
+All four invariants are protocol-correctness claims — they should
+hold on any NEAR network, regardless of validator set or traffic
+level. The repo's testnet artifacts are the primary evidence.
+
+A mainnet capture would add a second data point showing the same
+claims hold under real validator load and real cross-shard receipt
+forwarding. Shard-placement becomes particularly meaningful there:
+cross-shard routing is exercised more often when the signer and
+contract hash to different shards, and mainnet's smaller shard count
+means a higher fraction of receipts actually cross shard boundaries.
+(Currently out of scope for this repo — see the scope-discipline
+section of `../CLAUDE.md` — but the invariant infrastructure is
+network-agnostic and would apply without code changes.)

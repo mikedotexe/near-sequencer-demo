@@ -8,9 +8,10 @@ on:
 
 # Three gates: the Rust wasm build + unit tests, the TypeScript type
 # check, and a regression check on the committed report.md's top-line
-# invariant badge. If any of the three invariants ever regresses on
-# re-audit against the committed artifacts, this job fails before a
-# reader sees stale PASS claims in the report.
+# invariant badges. If any of the four invariants (DAG-placement,
+# Budget, Atomicity, Shard-placement) ever regresses on re-audit
+# against the committed artifacts, this job fails before a reader
+# sees stale PASS claims in the report.
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -60,4 +61,6 @@ jobs:
               || { echo "Budget invariant line not PASS in $report"; exit 1; }
           grep -Fq -- '- Atomicity (Recipe 4): **PASS**' "$report" \
               || { echo "Atomicity invariant line not PASS in $report"; exit 1; }
-          echo "all three invariant badges PASS in $report"
+          grep -Fq -- '- Shard-placement: **PASS**' "$report" \
+              || { echo "Shard-placement invariant line not PASS in $report"; exit 1; }
+          echo "all four invariant badges PASS in $report"

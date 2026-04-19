@@ -13,6 +13,7 @@ import {
   type DagInvariantSummary,
   type HandoffSummary,
   type RecipeSummary,
+  type ShardInvariantSummary,
   type TimeoutSummary,
 } from "./aggregate.js";
 import type { SnapshotStatus } from "./snapshot.js";
@@ -196,6 +197,50 @@ function atomicityInvariantLine(atomicity: AtomicityInvariantSummary): string {
   return `- Atomicity invariant: **VIOLATED** in ${atomicity.violations.length}/${atomicity.runsChecked} ${runsWord} (see violations below)`;
 }
 
+// Per-recipe shard-placement line. Every callback-emitting receipt
+// must execute on the contract's home shard (see docs/invariants.md#4).
+// runsNotEvaluable covers runs whose snapshot lacked a contract receipt
+// to anchor the home shard — inconclusive rather than violated.
+function shardInvariantLine(shard: ShardInvariantSummary): string | null {
+  if (shard.runsChecked === 0 && shard.runsNotEvaluable === 0) return null;
+  const runsWord = shard.runsChecked === 1 ? "run" : "runs";
+  const shardList =
+    shard.contractShards.length > 0
+      ? shard.contractShards.length === 1
+        ? `contract shard ${shard.contractShards[0]}`
+        : `contract shards {${shard.contractShards.join(", ")}}`
+      : "contract shard unknown";
+  if (shard.held && shard.runsChecked > 0) {
+    return `- Shard-placement invariant: **PASS** (${shard.totalReceiptsOnContractShard}/${shard.totalReceiptsChecked} callback receipts across ${shard.runsChecked} ${runsWord} executed on ${shardList})`;
+  }
+  if (shard.runsNotEvaluable > 0 && shard.runsChecked === 0) {
+    return `- Shard-placement invariant: **inconclusive** (${shard.runsNotEvaluable} ${runsWord} had no contract receipt to anchor the home shard)`;
+  }
+  return `- Shard-placement invariant: **VIOLATED** in ${shard.runsWithWrongShard}/${shard.runsChecked} ${runsWord} — callback receipts executed off the contract's home shard (see violations below)`;
+}
+
+function shardViolationsTable(shard: ShardInvariantSummary): string {
+  const rows: string[] = [];
+  for (const v of shard.violations) {
+    const runLabel =
+      v.mode !== undefined
+        ? `${v.mode}-${v.runIndex.toString().padStart(2, "0")}`
+        : v.runIndex.toString().padStart(2, "0");
+    for (const w of v.wrongShardReceipts) {
+      rows.push(
+        `| ${runLabel} | \`${w.event}\` | \`${w.receiptId.slice(0, 10)}…\` | ${v.contractShard ?? "?"} | ${w.observedShard ?? "?"} |`,
+      );
+    }
+  }
+  return [
+    "**Shard-placement violations:**",
+    "",
+    "| run | event | receipt | expected shard | observed shard |",
+    "|-----|-------|---------|----------------|----------------|",
+    ...rows,
+  ].join("\n");
+}
+
 function budgetViolationsTable(budget: BudgetInvariantSummary): string {
   const rows = budget.violations.map((v) => {
     const runLabel =
@@ -257,10 +302,35 @@ function topLineInvariantBadge(summaries: RecipeSummary[]): string[] {
   const handoff = summaries.find((s) => s.recipe === "handoff") as HandoffSummary | undefined;
   const atomicity = handoff?.atomicityInvariant;
 
+  // Shard-placement — applies to every recipe (same recipe set as DAG).
+  const shardRunsChecked = summaries.reduce((n, s) => n + s.shardInvariant.runsChecked, 0);
+  const shardRunsOnContractShard = summaries.reduce(
+    (n, s) => n + s.shardInvariant.runsOnContractShard,
+    0,
+  );
+  const shardRunsWithWrongShard = summaries.reduce(
+    (n, s) => n + s.shardInvariant.runsWithWrongShard,
+    0,
+  );
+  const shardTotalReceiptsChecked = summaries.reduce(
+    (n, s) => n + s.shardInvariant.totalReceiptsChecked,
+    0,
+  );
+  const shardTotalOnContractShard = summaries.reduce(
+    (n, s) => n + s.shardInvariant.totalReceiptsOnContractShard,
+    0,
+  );
+  const shardHeld = shardRunsWithWrongShard === 0 && shardRunsChecked > 0;
+  // Deduplicate observed contract shards across summaries (one entry per
+  // shard the four accounts landed on).
+  const shardSet = new Set<number>();
+  for (const s of summaries) for (const sh of s.shardInvariant.contractShards) shardSet.add(sh);
+  const contractShards = [...shardSet].sort((a, b) => a - b);
+
   const allHeld =
-    dagHeld && budgetHeld && (atomicity === undefined || atomicity.held);
+    dagHeld && budgetHeld && (atomicity === undefined || atomicity.held) && shardHeld;
   const header = allHeld
-    ? "**Invariants:** all three hold on the snapshotted runs."
+    ? "**Invariants:** all four hold on the snapshotted runs."
     : "**Invariants:** one or more violated — see the per-recipe sections below.";
   const bullets: string[] = [header, ""];
   bullets.push(
@@ -280,6 +350,17 @@ function topLineInvariantBadge(summaries: RecipeSummary[]): string[] {
       atomicity.held
         ? `- Atomicity (Recipe 4): **PASS** (${atomicity.runsAtomicallyHeld}/${atomicity.runsChecked} runs: each snapshotted Transfer matches recipient + amount + succeeded)`
         : `- Atomicity (Recipe 4): **FAIL** (${atomicity.violations.length}/${atomicity.runsChecked} runs)`,
+    );
+  }
+  if (shardRunsChecked > 0) {
+    const shardLabel =
+      contractShards.length === 1
+        ? `contract shard ${contractShards[0]}`
+        : `contract shards {${contractShards.join(", ")}}`;
+    bullets.push(
+      shardHeld
+        ? `- Shard-placement: **PASS** (${shardTotalOnContractShard}/${shardTotalReceiptsChecked} callback receipts across ${shardRunsChecked} runs executed on ${shardLabel})`
+        : `- Shard-placement: **FAIL** (${shardRunsWithWrongShard}/${shardRunsChecked} runs had callback receipts off the contract's home shard)`,
     );
   }
   return bullets;
@@ -371,6 +452,8 @@ export function writeReport(): string {
       if (budgetLine) lines.push(budgetLine);
       lines.push(atomicityInvariantLine(s.atomicityInvariant));
     }
+    const shardLine = shardInvariantLine(s.shardInvariant);
+    if (shardLine) lines.push(shardLine);
     const snapLine = snapshotHealthLine(s);
     if (snapLine) lines.push(snapLine);
     lines.push("");
@@ -393,6 +476,10 @@ export function writeReport(): string {
         lines.push(atomicityViolationsTable(s.atomicityInvariant));
         lines.push("");
       }
+    }
+    if (!s.shardInvariant.held && s.shardInvariant.violations.length > 0) {
+      lines.push(shardViolationsTable(s.shardInvariant));
+      lines.push("");
     }
     lines.push(`**Interpretation:** ${interpretRecipe(s)}`);
     lines.push("");

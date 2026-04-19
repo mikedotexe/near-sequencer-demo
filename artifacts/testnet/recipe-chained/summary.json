@@ -33,6 +33,19 @@
     "eventsInExpectedPlace": 15,
     "violations": []
   },
+  "shardInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsOnContractShard": 3,
+    "runsWithWrongShard": 0,
+    "runsNotEvaluable": 0,
+    "contractShards": [
+      4
+    ],
+    "totalReceiptsChecked": 6,
+    "totalReceiptsOnContractShard": 6,
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "chained",
@@ -68,7 +81,15 @@
         "recipe_callback_observed": "yield",
         "recipe_resolved_ok": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 2,
+        "wrongShardReceipts": []
+      }
     },
     {
       "recipe": "chained",
@@ -104,7 +125,15 @@
         "recipe_callback_observed": "yield",
         "recipe_resolved_ok": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 2,
+        "wrongShardReceipts": []
+      }
     },
     {
       "recipe": "chained",
@@ -140,7 +169,15 @@
         "recipe_callback_observed": "yield",
         "recipe_resolved_ok": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 2,
+        "wrongShardReceipts": []
+      }
     }
   ]
 }

@@ -29,13 +29,16 @@ import {
   type BasicAudit,
   type BudgetInvariantResult,
   type HandoffAudit,
+  type ShardInvariantResult,
   type TimeoutAudit,
 } from "../src/audit.js";
 import {
   computeAtomicityInvariant,
   computeBudgetInvariant,
   computeDagInvariant,
+  computeShardInvariant,
   type BudgetInputRun,
+  type ShardInputRun,
 } from "../src/aggregate.js";
 
 // ---------------------------------------------------------------------------
@@ -461,6 +464,132 @@ group("computeAtomicityInvariant (per-recipe atomicity roll-up)", () => {
     assert.equal(r.runsAtomicallyHeld, 1);
     // 1 evaluated run, 1 held — evaluated === held === 1, so held=true.
     // (Not-evaluable runs aren't violations; they're inconclusive.)
+    assert.equal(r.held, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeShardInvariant
+// ---------------------------------------------------------------------------
+
+// Builder for per-run ShardInvariantResult fixtures. `wrongCount` lets
+// us simulate a run where k of N callback receipts landed on the wrong
+// shard without synthesizing real receipt IDs; the sum receiptsChecked
+// stays internally consistent.
+function mkShardResult(opts: {
+  contractShard: number | null;
+  receiptsChecked: number;
+  wrongCount?: number;
+  evaluable?: boolean;
+}): ShardInvariantResult {
+  const wrongCount = opts.wrongCount ?? 0;
+  const evaluable = opts.evaluable ?? (opts.contractShard !== null && opts.receiptsChecked > 0);
+  const wrongShardReceipts = Array.from({ length: wrongCount }, (_, i) => ({
+    receiptId: `wrong-${i}`,
+    executorId: "recipes.test",
+    event: "recipe_resolved_ok",
+    observedShard: opts.contractShard !== null ? opts.contractShard + 1 : null,
+  }));
+  return {
+    held: evaluable && wrongCount === 0,
+    evaluable,
+    contractId: "recipes.test",
+    contractShard: opts.contractShard,
+    receiptsChecked: opts.receiptsChecked,
+    wrongShardReceipts,
+  };
+}
+
+group("computeShardInvariant (per-recipe shard-placement roll-up)", () => {
+  test("empty runs → held=false (nothing evaluated)", () => {
+    const r = computeShardInvariant([]);
+    assert.equal(r.held, false); // 0 runs is useless signal; same defensive as atomicity
+    assert.equal(r.runsChecked, 0);
+    assert.equal(r.runsOnContractShard, 0);
+    assert.equal(r.runsWithWrongShard, 0);
+    assert.equal(r.runsNotEvaluable, 0);
+  });
+
+  test("all runs on contract shard → held=true with receipt totals", () => {
+    const runs: ShardInputRun[] = [
+      { runIndex: 1, shardInvariant: mkShardResult({ contractShard: 4, receiptsChecked: 2 }) },
+      { runIndex: 2, shardInvariant: mkShardResult({ contractShard: 4, receiptsChecked: 3 }) },
+    ];
+    const r = computeShardInvariant(runs);
+    assert.equal(r.held, true);
+    assert.equal(r.runsChecked, 2);
+    assert.equal(r.runsOnContractShard, 2);
+    assert.equal(r.totalReceiptsChecked, 5);
+    assert.equal(r.totalReceiptsOnContractShard, 5);
+    assert.deepEqual(r.contractShards, [4]);
+  });
+
+  test("one run with a wrong-shard receipt flips held=false", () => {
+    const runs: ShardInputRun[] = [
+      { runIndex: 1, shardInvariant: mkShardResult({ contractShard: 4, receiptsChecked: 3 }) },
+      {
+        runIndex: 2,
+        mode: "claim",
+        shardInvariant: mkShardResult({ contractShard: 4, receiptsChecked: 3, wrongCount: 1 }),
+      },
+    ];
+    const r = computeShardInvariant(runs);
+    assert.equal(r.held, false);
+    assert.equal(r.runsChecked, 2);
+    assert.equal(r.runsOnContractShard, 1);
+    assert.equal(r.runsWithWrongShard, 1);
+    assert.equal(r.totalReceiptsChecked, 6);
+    assert.equal(r.totalReceiptsOnContractShard, 5);
+    assert.equal(r.violations.length, 1);
+    assert.equal(r.violations[0]!.runIndex, 2);
+    assert.equal(r.violations[0]!.mode, "claim");
+    assert.equal(r.violations[0]!.wrongShardReceipts.length, 1);
+  });
+
+  test("not-evaluable runs don't count toward runsChecked or violations", () => {
+    const runs: ShardInputRun[] = [
+      {
+        runIndex: 1,
+        shardInvariant: mkShardResult({
+          contractShard: null,
+          receiptsChecked: 0,
+          evaluable: false,
+        }),
+      },
+      { runIndex: 2, shardInvariant: mkShardResult({ contractShard: 4, receiptsChecked: 2 }) },
+    ];
+    const r = computeShardInvariant(runs);
+    assert.equal(r.runsNotEvaluable, 1);
+    assert.equal(r.runsChecked, 1);
+    assert.equal(r.runsOnContractShard, 1);
+    assert.equal(r.held, true); // 1 evaluable run, on-shard — enough signal
+  });
+
+  test("runs across distinct contract shards are all recorded", () => {
+    // Normally a single recipe/network has one contract shard. But if
+    // a corpus spans networks (testnet shard 4, mainnet shard 1) the
+    // summary should list both shards it anchored to.
+    const runs: ShardInputRun[] = [
+      { runIndex: 1, shardInvariant: mkShardResult({ contractShard: 4, receiptsChecked: 2 }) },
+      { runIndex: 2, shardInvariant: mkShardResult({ contractShard: 1, receiptsChecked: 3 }) },
+    ];
+    const r = computeShardInvariant(runs);
+    assert.equal(r.held, true);
+    assert.deepEqual(r.contractShards, [1, 4]);
+  });
+
+  test("runs without shardInvariant (back-compat audits) count as inconclusive", () => {
+    // Older audit.json files written before the shardInvariant field
+    // should be treated as "not evaluable" rather than crash the
+    // aggregator. This matches how the budget invariant handles
+    // pre-existing claim-mode handoff runs.
+    const runs: ShardInputRun[] = [
+      { runIndex: 1 }, // no shardInvariant
+      { runIndex: 2, shardInvariant: mkShardResult({ contractShard: 4, receiptsChecked: 2 }) },
+    ];
+    const r = computeShardInvariant(runs);
+    assert.equal(r.runsNotEvaluable, 1);
+    assert.equal(r.runsChecked, 1);
     assert.equal(r.held, true);
   });
 });

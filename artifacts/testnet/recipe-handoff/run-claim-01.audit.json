@@ -45,5 +45,13 @@
       "depositYocto": "10000000000000000000000",
       "succeeded": true
     }
+  },
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.testnet",
+    "contractShard": 4,
+    "receiptsChecked": 1,
+    "wrongShardReceipts": []
   }
 }

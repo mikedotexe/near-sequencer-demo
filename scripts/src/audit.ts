@@ -519,6 +519,166 @@ function checkAtomicity(
 }
 
 // ---------------------------------------------------------------------------
+// Shard-placement invariant
+// ---------------------------------------------------------------------------
+//
+// Full derivation + rationale: ../../docs/invariants.md#4-shard-placement
+//
+// NEP-519 schedules the callback receipt at yield time with
+// `receiver_id = <recipes contract>`. In NEAR's sharded execution
+// model, every receipt is routed to and executed on the shard that
+// owns the receiver's account — the directly observable form is
+// `outcome.executor_id`, which must be the contract for every
+// callback-emitting receipt. This is equivalent to "the callback
+// executed on the contract's home shard" under the protocol-level
+// fact that an account's shard is determined by its account hash.
+//
+// On a multi-shard network (testnet ~12, mainnet 4–6), the resume-side
+// signer (e.g. `alice.*`) may live on a different shard than
+// `recipes.*`. The invariant is what makes cross-shard receipt
+// forwarding a correctness-preserving operation: the callback stays put
+// on the contract's shard, only the payload crosses the shard boundary.
+//
+// The contract's home shard is reported for transparency (so readers
+// can see "callbacks ran on shard 4" explicitly in the report). It's
+// derived empirically from the first FunctionCall receipt in the yield
+// tx's DAG whose chunk is locatable — typically the initial
+// `signer → contract` action receipt, which appears in the chunk's
+// `receipts[]` at delivery time. Yielded callback receipts are
+// delivered from the protocol's yielded-receipts queue rather than
+// the standard cross-shard routing path, so they don't show up in
+// `chunk.receipts[]`; the home-shard anchor therefore comes from the
+// pre-yield receipt, not the callback itself.
+
+// Callback events whose emitting receipts must land on the contract's
+// home shard. Intentionally excludes `recipe_yielded` (emitted by the
+// initial yield receipt — trivially on the contract's shard because
+// that's the receiver) and `recipe_resumed` (emitted by the resume
+// method itself — a separate FunctionCall receipt on the resume-tx
+// path). See docs/invariants.md#4-shard-placement for the full list.
+const SHARD_CALLBACK_EVENTS = [
+  "recipe_resolved_ok",
+  "recipe_resolved_err",
+  "recipe_dispatched",
+  "recipe_callback_observed",
+  "handoff_released",
+  "handoff_refunded",
+];
+
+export interface ShardInvariantViolation {
+  receiptId: string;
+  executorId: string;
+  event: string;
+  // Diagnostic: set if the chunk containing this receipt was locatable
+  // in the snapshot. Yielded callback receipts typically can't be
+  // located this way (see module-level comment), so this is best-effort.
+  observedShard: number | null;
+}
+
+export interface ShardInvariantResult {
+  held: boolean;
+  // False when no callback receipts were present to check. Treat as
+  // "inconclusive" rather than "violated."
+  evaluable: boolean;
+  contractId: string;
+  // Empirically derived from the first FunctionCall receipt to the
+  // contract whose chunk was findable; reported for transparency. null
+  // means no such receipt was locatable (e.g., live-RPC source with
+  // stale archive) — doesn't itself cause a violation since the
+  // executor_id check doesn't depend on it.
+  contractShard: number | null;
+  receiptsChecked: number;
+  wrongShardReceipts: ShardInvariantViolation[];
+}
+
+async function findChunkForReceipt(
+  src: SnapshotSource,
+  blockHash: string,
+  receiptId: string,
+): Promise<{ chunkHash: string; shardId: number } | null> {
+  const block = await src.getBlockByHash(blockHash);
+  if (!block) return null;
+  for (const chunkMeta of block.chunks) {
+    const chunk = await src.getChunkByHash(chunkMeta.chunk_hash);
+    if (!chunk) continue;
+    if (chunk.receipts.some((r) => r.receipt_id === receiptId)) {
+      return { chunkHash: chunk.header.chunk_hash, shardId: chunk.header.shard_id };
+    }
+  }
+  return null;
+}
+
+// Home shard is anchored from any FunctionCall receipt whose chunk can
+// be located AND whose executor is the contract. The initial
+// `signer → contract` action receipt satisfies both reliably (it
+// appears in the chunk's receipts[] at delivery time, with
+// executor_id = contract). Yielded callback receipts don't appear in
+// chunk.receipts[] — they're delivered out-of-band — so they can't
+// serve as the anchor.
+async function findContractHomeShard(
+  src: SnapshotSource,
+  rolesToScan: TxRole[],
+  contractId: string,
+): Promise<number | null> {
+  for (const role of rolesToScan) {
+    const tx = src.getTxByRole(role);
+    if (!tx) continue;
+    for (const outcome of tx.receipts_outcome) {
+      if (outcome.outcome.executor_id !== contractId) continue;
+      const chunk = await findChunkForReceipt(src, outcome.block_hash, outcome.id);
+      if (chunk) return chunk.shardId;
+    }
+  }
+  return null;
+}
+
+async function computeShardPlacement(
+  src: SnapshotSource,
+  recipe: RecipeName,
+  name: string,
+  contractId: string,
+  opts?: { handoffMode?: "claim" | "timeout" },
+): Promise<ShardInvariantResult> {
+  const rolesToScan: TxRole[] =
+    recipe === "timeout" || opts?.handoffMode === "timeout" ? ["yield"] : ["yield", "resume"];
+  const contractShard = await findContractHomeShard(src, rolesToScan, contractId);
+  const wrong: ShardInvariantViolation[] = [];
+  let receiptsChecked = 0;
+  for (const role of rolesToScan) {
+    const tx = src.getTxByRole(role);
+    if (!tx) continue;
+    for (const outcome of tx.receipts_outcome) {
+      const events = findTraceEvents(outcome.outcome.logs, recipe, name);
+      const callback = events.find((e) => SHARD_CALLBACK_EVENTS.includes(e.ev));
+      if (!callback) continue;
+      receiptsChecked++;
+      if (outcome.outcome.executor_id !== contractId) {
+        // Best-effort chunk lookup for diagnostic output. Almost
+        // always returns null for yielded callback receipts (by
+        // design of the yielded-delivery path); not a problem.
+        const chunk = await findChunkForReceipt(src, outcome.block_hash, outcome.id);
+        wrong.push({
+          receiptId: outcome.id,
+          executorId: outcome.outcome.executor_id,
+          event: callback.ev,
+          observedShard: chunk?.shardId ?? null,
+        });
+      }
+    }
+  }
+  const evaluable = receiptsChecked > 0;
+  const held = evaluable && wrong.length === 0;
+  return {
+    held,
+    evaluable,
+    contractId,
+    contractShard,
+    receiptsChecked,
+    wrongShardReceipts: wrong,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Audit artifact shapes
 // ---------------------------------------------------------------------------
 
@@ -540,6 +700,11 @@ interface AuditBase {
   interpretation: string;
   dagPlacement: Record<string, TxRole | null>;
   dagInvariantViolations: DagInvariantViolation[];
+  // Shard-placement invariant: every callback-emitted trace event
+  // executed on the contract's home shard. Optional for back-compat
+  // with audit.json files written before the field existed; consumers
+  // should treat absence as "inconclusive" (evaluable=false).
+  shardInvariant?: ShardInvariantResult;
 }
 
 export interface BasicAudit extends AuditBase {
@@ -738,6 +903,7 @@ async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<Bas
         : "callback not observed in snapshot";
 
   const { placement, violations } = computeDagPlacement(src, "basic", raw.name);
+  const shardInvariant = await computeShardPlacement(src, "basic", raw.name, ACCOUNTS.recipes);
 
   return {
     recipe: "basic",
@@ -759,6 +925,7 @@ async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<Bas
     interpretation,
     dagPlacement: placement,
     dagInvariantViolations: violations,
+    shardInvariant,
   };
 }
 
@@ -788,6 +955,7 @@ async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise
 
   const { placement, violations } = computeDagPlacement(src, "timeout", raw.name);
   const budgetInvariant = checkBudget(blocksFromYieldToCallback);
+  const shardInvariant = await computeShardPlacement(src, "timeout", raw.name, ACCOUNTS.recipes);
 
   return {
     recipe: "timeout",
@@ -806,6 +974,7 @@ async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise
     dagPlacement: placement,
     dagInvariantViolations: violations,
     budgetInvariant,
+    shardInvariant,
   };
 }
 
@@ -852,6 +1021,7 @@ async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise
         : "chained callback not observed in snapshot";
 
   const { placement, violations } = computeDagPlacement(src, "chained", raw.name);
+  const shardInvariant = await computeShardPlacement(src, "chained", raw.name, ACCOUNTS.recipes);
 
   return {
     recipe: "chained",
@@ -877,6 +1047,7 @@ async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise
     interpretation,
     dagPlacement: placement,
     dagInvariantViolations: violations,
+    shardInvariant,
   };
 }
 
@@ -954,6 +1125,9 @@ async function auditHandoff(raw: RawHandoffArtifact, recipeDir: string): Promise
   // the resumer's pace so there's no 200-block budget to check.
   const budgetInvariant =
     raw.mode === "timeout" ? checkBudget(blocksFromYieldToSettle) : undefined;
+  const shardInvariant = await computeShardPlacement(src, "handoff", raw.name, ACCOUNTS.recipes, {
+    handoffMode: raw.mode,
+  });
 
   const interpretation =
     raw.mode === "claim"
@@ -989,6 +1163,7 @@ async function auditHandoff(raw: RawHandoffArtifact, recipeDir: string): Promise
     dagPlacement: placement,
     dagInvariantViolations: violations,
     atomicityInvariant,
+    shardInvariant,
     ...(budgetInvariant ? { budgetInvariant } : {}),
   };
 }
@@ -1052,6 +1227,21 @@ export async function auditRecipe(recipe: RecipeName): Promise<Audit[]> {
     } else if (atomicity && !atomicity.evaluable) {
       process.stderr.write(
         `[audit ${recipe}]   !! atomicity invariant inconclusive: no Transfer receipt to ${atomicity.expectedRecipient} found in snapshot\n`,
+      );
+    }
+    const shard = audit.shardInvariant;
+    if (shard && shard.evaluable && !shard.held) {
+      process.stderr.write(
+        `[audit ${recipe}]   !! shard-placement invariant violated: ${shard.wrongShardReceipts.length} callback receipt(s) executed off the contract's home shard (contractShard=${shard.contractShard})\n`,
+      );
+      for (const v of shard.wrongShardReceipts) {
+        process.stderr.write(
+          `[audit ${recipe}]      ${v.event}: receipt ${v.receiptId.slice(0, 10)}… (executor=${v.executorId}) landed on shard ${v.observedShard ?? "unknown"}\n`,
+        );
+      }
+    } else if (shard && !shard.evaluable && shard.contractShard === null) {
+      process.stderr.write(
+        `[audit ${recipe}]   !! shard-placement invariant inconclusive: no FunctionCall receipt to ${shard.contractId} found to anchor the home shard\n`,
       );
     }
     audits.push(audit);

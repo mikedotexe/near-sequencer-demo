@@ -162,36 +162,40 @@ async function runByRecipe(recipe: RecipeName, repeat: number): Promise<void> {
 }
 
 // Counts violations across all invariants. An "evaluable but failing"
-// budget check counts as 1; inconclusive checks (no snapshot) don't
-// count. Same logic for atomicity.
+// check counts as 1; inconclusive checks (no snapshot, no anchor) don't
+// count — same logic for every invariant that has an `evaluable` flag.
 interface InvariantCounts {
   dag: number;
   budget: number;
   atomicity: number;
+  shard: number;
 }
 
 interface AuditLike {
   dagInvariantViolations: unknown[];
   budgetInvariant?: { held: boolean; evaluable: boolean };
   atomicityInvariant?: { held: boolean; evaluable: boolean };
+  shardInvariant?: { held: boolean; evaluable: boolean };
 }
 
 function countViolations(audits: AuditLike[]): InvariantCounts {
   let dag = 0;
   let budget = 0;
   let atomicity = 0;
+  let shard = 0;
   for (const a of audits) {
     dag += a.dagInvariantViolations.length;
     if (a.budgetInvariant && a.budgetInvariant.evaluable && !a.budgetInvariant.held) budget++;
     if (a.atomicityInvariant && a.atomicityInvariant.evaluable && !a.atomicityInvariant.held) {
       atomicity++;
     }
+    if (a.shardInvariant && a.shardInvariant.evaluable && !a.shardInvariant.held) shard++;
   }
-  return { dag, budget, atomicity };
+  return { dag, budget, atomicity, shard };
 }
 
 function invariantTotal(counts: InvariantCounts): number {
-  return counts.dag + counts.budget + counts.atomicity;
+  return counts.dag + counts.budget + counts.atomicity + counts.shard;
 }
 
 async function cmdAudit(rest: string[]): Promise<void> {
@@ -203,6 +207,7 @@ async function cmdAudit(rest: string[]): Promise<void> {
     if (v.dag > 0) parts.push(`dag=${v.dag}`);
     if (v.budget > 0) parts.push(`budget=${v.budget}`);
     if (v.atomicity > 0) parts.push(`atomicity=${v.atomicity}`);
+    if (v.shard > 0) parts.push(`shard=${v.shard}`);
     process.stderr.write(
       `[audit ${recipe}] !! invariant(s) violated across ${audits.length} runs (${parts.join(", ")}) — see per-run audit JSON and artifacts/<network>/report.md\n`,
     );
@@ -270,7 +275,7 @@ async function cmdAll(): Promise<void> {
   await runChainedRepeated(3);
   await runHandoffRepeated("claim", 2);
   await runHandoffRepeated("timeout", 1);
-  const totals: InvariantCounts = { dag: 0, budget: 0, atomicity: 0 };
+  const totals: InvariantCounts = { dag: 0, budget: 0, atomicity: 0, shard: 0 };
   let totalRuns = 0;
   for (const recipe of ["basic", "timeout", "chained", "handoff"] as const) {
     const audits = await auditRecipe(recipe);
@@ -278,6 +283,7 @@ async function cmdAll(): Promise<void> {
     totals.dag += v.dag;
     totals.budget += v.budget;
     totals.atomicity += v.atomicity;
+    totals.shard += v.shard;
     totalRuns += audits.length;
   }
   await cmdAggregate();
@@ -295,6 +301,7 @@ async function cmdAll(): Promise<void> {
     if (totals.dag > 0) parts.push(`dag=${totals.dag}`);
     if (totals.budget > 0) parts.push(`budget=${totals.budget}`);
     if (totals.atomicity > 0) parts.push(`atomicity=${totals.atomicity}`);
+    if (totals.shard > 0) parts.push(`shard=${totals.shard}`);
     process.stderr.write(
       `[all] !! invariant(s) violated across ${totalRuns} runs (${parts.join(", ")}) — see artifacts/<network>/report.md\n`,
     );
@@ -310,6 +317,13 @@ async function cmdClean(rest: string[]): Promise<void> {
         `This will delete these accounts: ${Object.values(ACCOUNTS).join(", ")}`,
     );
   }
+  // Chain-id guard: if RPC_SEND is misconfigured (e.g., set to mainnet
+  // while NEAR_NETWORK=testnet) the guardFlag check above would still
+  // accept `--i-know-this-is-testnet` but then cleanAll() would delete
+  // accounts on the wrong chain. assertChainIdMatches throws if the
+  // RPC's reported chain_id doesn't match the NEAR_NETWORK env var,
+  // catching this before any destructive action.
+  await assertChainIdMatches();
   await cleanAll();
   const rm = spawnSync("rm", ["-rf", ARTIFACTS_DIR], { stdio: "inherit" });
   if (rm.status !== 0) process.stderr.write(`[clean] rm ${ARTIFACTS_DIR}: exit ${rm.status}\n`);

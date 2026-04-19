@@ -28,5 +28,13 @@
     "observedBlocks": 202,
     "lowerBound": 200,
     "upperBound": 205
+  },
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.testnet",
+    "contractShard": 4,
+    "receiptsChecked": 1,
+    "wrongShardReceipts": []
   }
 }

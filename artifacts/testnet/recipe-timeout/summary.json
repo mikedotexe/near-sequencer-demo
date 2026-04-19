@@ -29,6 +29,19 @@
     ],
     "violations": []
   },
+  "shardInvariant": {
+    "held": true,
+    "runsChecked": 1,
+    "runsOnContractShard": 1,
+    "runsWithWrongShard": 0,
+    "runsNotEvaluable": 0,
+    "contractShards": [
+      4
+    ],
+    "totalReceiptsChecked": 1,
+    "totalReceiptsOnContractShard": 1,
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "timeout",
@@ -60,6 +73,14 @@
         "observedBlocks": 202,
         "lowerBound": 200,
         "upperBound": 205
+      },
+      "shardInvariant": {
+        "held": true,
+        "evaluable": true,
+        "contractId": "recipes.mike.testnet",
+        "contractShard": 4,
+        "receiptsChecked": 1,
+        "wrongShardReceipts": []
       }
     }
   ]

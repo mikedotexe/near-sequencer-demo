@@ -45,6 +45,14 @@
       "succeeded": true
     }
   },
+  "shardInvariant": {
+    "held": true,
+    "evaluable": true,
+    "contractId": "recipes.mike.testnet",
+    "contractShard": 4,
+    "receiptsChecked": 1,
+    "wrongShardReceipts": []
+  },
   "budgetInvariant": {
     "held": true,
     "evaluable": true,
