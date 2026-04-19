@@ -19,6 +19,7 @@ import { runHandoffRepeated, type HandoffMode } from "./recipes/handoff.js";
 import { auditRecipe } from "./audit.js";
 import { summarizeAll } from "./aggregate.js";
 import { writeReport } from "./report.js";
+import { writeComparativeReport } from "./comparative.js";
 import { explainDag } from "./explain-dag.js";
 import { translate, parseRunFilter } from "./translate.js";
 import { assertChainIdMatches, connectSender, fetchStatus } from "./rpc.js";
@@ -42,6 +43,7 @@ function usage(): void {
       "  explain-dag <basic|timeout|chained|handoff> [run]  print trace-event placement by tx role for a snapshotted run",
       "  aggregate                            summarize per-recipe stats",
       "  report                               write artifacts/<network>/report.md",
+      "  comparative                          write artifacts/comparative.md (needs both testnet + mainnet)",
       "  translate [<recipe>] [--run N|latest|all]",
       "                                       regenerate viz/data/recipe-*-live-NN.json from snapshotted runs",
       "  all                                  build + deploy + run each recipe + audit + aggregate + report + translate",
@@ -259,6 +261,15 @@ async function cmdReport(): Promise<void> {
   process.stderr.write(`[report] wrote ${path}\n`);
 }
 
+// Cross-network comparative report. Unlike the other subcommands this
+// is not partitioned by NEAR_NETWORK — it reads both artifacts/testnet/
+// and artifacts/mainnet/ and writes artifacts/comparative.md at the
+// root. Errors loudly if either tree is incomplete.
+async function cmdComparative(): Promise<void> {
+  const path = writeComparativeReport();
+  process.stderr.write(`[comparative] wrote ${path}\n`);
+}
+
 async function cmdTranslate(rest: string[]): Promise<void> {
   const recipeArg = rest.find((a, i) => !a.startsWith("--") && rest[i - 1] !== "--run");
   const recipes = recipeArg ? [parseRecipeName(recipeArg)] : undefined;
@@ -354,6 +365,9 @@ async function main(): Promise<void> {
         break;
       case "aggregate":
         await cmdAggregate();
+        break;
+      case "comparative":
+        await cmdComparative();
         break;
       case "report":
         await cmdReport();

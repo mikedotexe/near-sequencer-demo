@@ -329,17 +329,30 @@ invariants; adding two more is additive.
 
 All four invariants are protocol-correctness claims — they should
 hold on any NEAR network, regardless of validator set or traffic
-level. The repo's testnet artifacts are the primary evidence.
+level. The repo ships dual-network evidence: testnet (lighter load,
+casual-hacking baseline) and mainnet (real validator cohort, real
+cross-shard receipt forwarding under the demo's account layout).
 
-A mainnet capture adds a second data point showing the same claims
-hold under real validator load and real cross-shard receipt
-forwarding. Shard-placement becomes particularly meaningful there:
-cross-shard routing is exercised more often when the signer and
-contract hash to different shards, and mainnet's smaller shard count
-means a higher fraction of receipts actually cross shard boundaries.
+Side-by-side PASS/FAIL grid, observed-budget distribution, and
+contract home-shard comparison live in
+[`../artifacts/comparative.md`](../artifacts/comparative.md).
+Short version: all four invariants hold identically on both
+networks. Notable data points from the mainnet capture:
+
+- **Budget variance is zero.** Both networks observed the timeout
+  fire at exactly 202 blocks on every run (nominal 200 + 2 blocks
+  of scheduling latency). Mainnet's real validator load did not
+  widen the window.
+- **Shard 4 on both networks.** `recipes.<master>` hashes to shard 4
+  on both layouts; this is a coincidence of account names and the
+  current shard topology, not a guarantee. What the invariant
+  guarantees is that *wherever* the contract lands, every callback
+  executes there.
 
 See [`mainnet-readiness.md`](mainnet-readiness.md) for the bootstrap
-runbook, expected cost, state hygiene analysis, and verification
-steps. The invariant infrastructure is network-agnostic — no code
-changes are needed for a mainnet deploy beyond the
-`NEAR_NETWORK=mainnet` env var.
+runbook, expected cost, and state-hygiene analysis;
+[`verification.md`](verification.md) for three independent-verification
+paths a reader can run to confirm these numbers without trusting this
+repo. The invariant infrastructure is network-agnostic — no code
+changes were needed for mainnet beyond the `NEAR_NETWORK=mainnet`
+env var.

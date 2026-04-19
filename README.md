@@ -11,7 +11,9 @@ primitive.
   method-pair + a runnable TypeScript flow + a Manim-animated
   scene driven by real on-chain snapshots. Verified on **both
   testnet and mainnet** — four invariants PASS identically on
-  each. Mainnet bootstrap runbook:
+  each, side-by-side in
+  [`artifacts/comparative.md`](artifacts/comparative.md).
+  Mainnet bootstrap runbook:
   [`docs/mainnet-readiness.md`](docs/mainnet-readiness.md).
 - **What it proves.** Four machine-checked invariants on every run,
   visible as a PASS/FAIL header at the top of
