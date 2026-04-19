@@ -2,7 +2,7 @@
 
 Three Manim scenes, one per NEP-519 yield/resume recipe. The scenes are
 driven by hand-authored synthetic timelines for iteration + translator-
-generated live timelines from real testnet captures, so the visual
+generated live timelines from real testnet snapshots, so the visual
 vocabulary of each recipe renders the same way against both.
 
 ## Audiences
@@ -105,7 +105,7 @@ Each recipe has two data files:
   block spacing (e.g. the timeout scene compresses the 200-block wait
   into ~3.5 seconds of scene time via an aggressive `idle_block_seconds`).
 - `data/recipe-{name}-live-NN.json` — translator output from a real
-  testnet capture, regenerated via `scripts/onchain-to-timeline.mjs`.
+  testnet snapshot, regenerated via `scripts/onchain-to-timeline.mjs`.
   Block heights are the actual observed block heights; scene pacing
   falls out of `block_seconds * (last - first)`.
 
@@ -138,11 +138,55 @@ manim -ql scenes/recipe_basic.py RecipeBasicLive
 ```
 
 The translator reads the raw artifact + sibling `onchain.json`, walks
-trace events from the captured receipt DAGs, and emits a
+trace events from the snapshotted receipt DAGs, and emits a
 TimelinePlayer-compatible JSON. It does not re-hit the network: every
-block height below comes from the capture. See the translator source
+block height below comes from the snapshot. See the translator source
 for details on how yield-vs-resume tx DAGs are traversed to find each
 trace event.
+
+## Volume 2 — Intents primer (planned)
+
+The four recipes in this repo are Volume 1: mechanics of yield / resume
+/ callback across two txs, timeout budget, cross-contract composition,
+atomic value transfer. The TimelinePlayer ships with additional event
+vocabulary that Volume 1 doesn't exercise but Volume 2 will — a
+NEAR Intents primer plus the adapter / asserted policy patterns the
+sibling [`smart-account-contract`](../../smart-account-contract) runs
+in production. These handlers are documented at
+[`common/ATTRIBUTION.md`](common/ATTRIBUTION.md); the composition
+recipe they enable:
+
+- `visit_start` + `visit_complete` — solvers each enter an active
+  deliberation window inside the 200-block budget. The satellite's
+  pie-slice wedge ticks visibly while the solver thinks.
+- `cascade_fail` — the first valid solver wins via `settle` with
+  `status="ok"`; the losing sibling satellites synchronously fire red
+  shockwaves (clean `PromiseError` resume on each loser).
+- `inner_dispatch` + `inner_return` — the winning solver's execution is
+  verified by a `.then()` callback that checks truthful results before
+  the adapter's outer receipt resolves. Distinct from `downstream_call`
+  because the adapter isn't using yield — it's composing inside a
+  yielded receipt.
+- `decay` + `camera_focus` / `camera_restore` — near-miss visual and
+  cinematic composition for a solver race against the 200-block
+  budget boundary.
+
+Emission shape for a Volume 2 timeline, roughly:
+
+```
+block N:   yield_eject on intent (auction opens)
+block N+1: actor_appear for solver_a, solver_b, solver_c
+block N+1: visit_start on each solver (dwell window begins)
+block N+8: settle on solver_a, status="ok"     # winner adopts
+block N+8: cascade_fail on [solver_b, solver_c] # losers release
+block N+9: inner_dispatch from solver_a → target (execution)
+block N+12: inner_return on solver_a            # verified complete
+```
+
+No timeline JSON currently emits these — they're held as live handlers
+so the first Volume 2 recipe can be written as data + a scene class,
+without plumbing changes. If Volume 2 is descoped, the handlers are
+easy to strip (one block per handler in `timeline.py`).
 
 ## Voice principle — vocabulary tracks the contract
 

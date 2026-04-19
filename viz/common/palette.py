@@ -27,10 +27,3 @@ CONTRACT_TEAL_GLOW  = "#3e6776"   # sunlit inner glow toward the highlight
 SATELLITE_AMBER_GLOW = "#f5d78a"  # brighter amber core
 PERSON_ORANGE_GLOW   = "#f8bd8a"  # brighter orange core
 
-# Detached descendant — a receipt the sequencer is NOT watching, landing
-# on a target contract whose state changes silently w.r.t. the sequencer.
-# Muted slate so the viewer's eye distinguishes it from amber (yielded /
-# watched) and green (settled). Added for this repo's "Silent Message"
-# scene. See viz/DESIGN.md §3.2 and viz/common/ATTRIBUTION.md.
-SILENT_GREY     = "#8a95a2"       # visible on cosmic background but unsaturated
-SILENT_GREY_DEEP = "#3a4552"      # edge / trail taper

@@ -236,12 +236,11 @@ class LiquidContract(VGroup):
         "this holds state that wasn't here before."
 
         Call sites: every event that corresponds to a contract primitive
-        that mutates target state — currently `detached_land` (Flow B's
-        detached sink.append) and `inner_dispatch` (Flow C's adapter
-        courier reaching sink). Not fired from `downstream_return`
-        because not every downstream call is a state-mutation (unit.run_unit
-        is a no-op); we're strict here so the tint stays a meaningful
-        thesis signal rather than ambient decoration.
+        that mutates target state — currently `inner_dispatch` (adapter
+        courier reaching the target). Not fired from `downstream_return`
+        because not every downstream call is a state-mutation; we're
+        strict here so the tint stays a meaningful signal rather than
+        ambient decoration.
         """
         current = self.state_residue.get_fill_opacity()
         new_opacity = max(current, target_opacity)

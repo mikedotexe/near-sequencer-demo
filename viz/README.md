@@ -6,7 +6,7 @@ design rationale; this doc is for rendering quickly.
 ## What's in here
 
 One Manim scene per NEP-519 recipe, plus a Live variant that replays
-the same scene against real testnet captures:
+the same scene against real testnet snapshots:
 
 - `scenes/recipe_basic.py` → classes `RecipeBasic` (synthetic) and
   `RecipeBasicLive` (live data).
@@ -46,7 +46,7 @@ make recipe-basic-hq
 ## Live data variants
 
 Each scene has a `*Live` class that reads a translator-generated
-timeline JSON built from a real testnet capture. Regenerate the live
+timeline JSON built from a real testnet snapshot. Regenerate the live
 JSONs after a fresh `scripts/demo.sh run <recipe>`:
 
 ```sh
@@ -70,6 +70,18 @@ Same for `recipe-timeout` and `recipe-chained`.
   `scripts/onchain-to-timeline.mjs` from `artifacts/.../run-NN.raw.json`.
 - `data/recipe-handoff-{claim,timeout}-live-NN.json` — generated from
   `artifacts/.../run-{claim,timeout}-NN.raw.json`.
+
+## QA: frame extraction
+
+`scripts/storyboard.sh` pulls stills out of a rendered MP4 for thumbnail
+grids or visual-regression checks. Modes: evenly-spaced frames, scene-
+change detection (FFmpeg), or explicit timestamps. Not part of the
+render pipeline; reach for it when reviewing a `-qh` render or
+assembling a preview strip:
+
+```sh
+./scripts/storyboard.sh media/videos/recipe_basic/1080p60/RecipeBasic.mp4 --count 9
+```
 
 ## Event vocabulary (quick reference)
 

@@ -49,8 +49,6 @@ from .palette import (
     SATELLITE_AMBER,
     SATELLITE_AMBER_GLOW,
     SATELLITE_EDGE,
-    SILENT_GREY,
-    SILENT_GREY_DEEP,
 )
 from .sphere import LiquidContract, PersonActor
 from .satellite import Satellite
@@ -207,13 +205,6 @@ class TimelinePlayer:
         # satellite exits. Purely ambient; no invariant depends on them.
         self._orbit_guides: dict[str, DashedVMobject] = {}
         self._orbit_guide_refs: dict[str, int] = {}
-
-        # Detached descendants: receipts spawned by a contract and not
-        # watched by the sequencer. Keyed by `_detached_id` string. See
-        # viz/DESIGN.md §3.2. Each entry is the in-flight mobject; the
-        # updater on it advances its position toward the destination
-        # over (land_block - spawn_block) idle ticks.
-        self._detached_dots: dict[str, Any] = {}
 
         # Inner-chain couriers: small amber dots that depict an adapter's
         # plain `.then()` FunctionCall — a receipt that's observed by
@@ -458,12 +449,6 @@ class TimelinePlayer:
         # the cascade beat where every slot is load-bearing.
         "cascade_fail":      ("cascade_fail",
                               "Winner adopted; shop resumes losing yield_ids with a clean failure."),
-        # This repo's addition — see viz/DESIGN.md §3.2.
-        "detached_spawn":    ("detached_spawn",
-                              "A contract schedules a receipt and returns early — the sequencer isn't watching it."),
-        # `detached_land` intentionally has no teach card; its pedagogy
-        # is carried by the narrative card at the landing beat and by
-        # the visible silent arrival on the target sphere.
         # This repo's addition — see viz/DESIGN.md §3.3.
         "inner_dispatch":    ("inner_dispatch",
                               "Adapter chains .then(callback) — a plain promise chain, not a yield. The callback checks the target's callback result before the adapter resolves."),
@@ -664,8 +649,6 @@ class TimelinePlayer:
             "visit_start":        self._ev_visit_start,
             "visit_complete":     self._ev_visit_complete,
             "cascade_fail":       self._ev_cascade_fail,
-            "detached_spawn":     self._ev_detached_spawn,
-            "detached_land":      self._ev_detached_land,
             "inner_dispatch":     self._ev_inner_dispatch,
             "inner_return":       self._ev_inner_return,
             "actor_appear":       self._ev_actor_appear,
@@ -1290,179 +1273,6 @@ class TimelinePlayer:
                 self._deregister_ephemeron(shock)
 
         return group, cleanup
-
-    # ------------------------------------------------------------------
-    # Detached descendants — this repo's addition, see viz/DESIGN.md §3.2.
-    # ------------------------------------------------------------------
-
-    def _ev_detached_spawn(self, ev):
-        """Launch a slate-grey dot from `actor` toward `target`, to land
-        at `land_block`. The dot persists in the scene graph with an
-        updater that linearly advances its position over real-time so
-        it continues travelling across intervening block batches.
-
-        Vocabulary distinction (vs. `downstream_call`):
-        - `downstream_call` depicts a FunctionCall receipt the sequencer
-          watches — amber, fast, with a return arc and a settle bloom.
-        - `detached_spawn` depicts a FunctionCall receipt the sequencer
-          does NOT watch — slate-grey, slow, no return arc, silent
-          landing at `detached_land`.
-
-        This is the core visual of the "Silent Message" thesis: when a
-        contract returns success before its spawned effects have landed,
-        the sequencer's ordered release says nothing about those
-        descendants.
-        """
-        actor = self.actors[ev["actor"]]
-        target = self.actors[ev["target"]]
-        detached_id = ev.get("_detached_id") or f"{ev['actor']}->{ev['target']}@{ev['block']}"
-        spawn_block = int(ev["block"])
-        land_block = int(ev.get("land_block", spawn_block + 3))
-        duration_blocks = max(1, land_block - spawn_block)
-        # Minimum flight of ~0.9s so even zero-block silent_value cases
-        # (real testnet runs often settle sink.append into the same
-        # block as gamma-resume) still give the viewer time to see the
-        # dot depart before it lands. Block-count drives longer flights
-        # proportionally — a synthetic +3-block gap renders as ~1.7s.
-        duration_s = max(0.9, duration_blocks * max(self.idle_block_seconds, self.block_seconds))
-
-        start = np.array(actor.center(), dtype=float).copy()
-        end = np.array(target.center(), dtype=float).copy()
-        # Subtle arc above the straight line so the trajectory reads as
-        # a curved flight path rather than a slide. Scale with travel
-        # distance so short hops don't get an absurdly tall loop. The
-        # primary signal remains the colour + silence on arrival.
-        travel = float(np.linalg.norm(end - start))
-        arc_peak = min(0.35, 0.12 * travel)
-
-        # Two-ring composition: an outer muted halo + an inner solid
-        # dot. The halo makes the dot perceptible against the starfield
-        # during its slow drift; the inner disc carries the colour
-        # identity. Radius tuned by eye so it's distinctly smaller than
-        # a satellite (0.32) — reading as a "lesser, unmonitored" object.
-        halo = Circle(
-            radius=0.22,
-            color=SILENT_GREY,
-            fill_color=SILENT_GREY,
-            fill_opacity=0.22,
-            stroke_width=0,
-        )
-        disc = Circle(
-            radius=0.14,
-            color=SILENT_GREY_DEEP,
-            fill_color=SILENT_GREY,
-            fill_opacity=0.92,
-            stroke_width=1.4,
-        )
-        dot = VGroup(halo, disc)
-        dot.move_to(start)
-        self.scene.add(dot)
-        self._register_ephemeron(dot)
-
-        # Updater state — closure captures the elapsed wall-clock so the
-        # dot moves even across block batches. Clamped at 1.0 so if we
-        # overshoot the land block (e.g. scene.play has jitter) the dot
-        # rests at the target until `detached_land` cleans it up.
-        state = {"elapsed": 0.0}
-
-        def advance(mob, dt):
-            state["elapsed"] += dt
-            t = min(1.0, state["elapsed"] / duration_s)
-            lerp = start + (end - start) * t
-            # Parabola peaking at t=0.5 — matches the eye's expectation
-            # of an in-flight object that rises then falls.
-            peak = arc_peak * (1.0 - (2.0 * t - 1.0) ** 2)
-            mob.move_to(lerp + np.array([0.0, peak, 0.0]))
-
-        dot.add_updater(advance)
-        self._detached_dots[detached_id] = dot
-
-        # A faint grey parting ring at the source — punctuates the
-        # moment of detachment so the viewer registers the departure
-        # (otherwise the dot's slow drift is hard to catch against a
-        # busy cascade).
-        ring = Circle(
-            radius=0.15,
-            color=SILENT_GREY,
-            fill_opacity=0.0,
-            stroke_width=2.2,
-            stroke_opacity=0.75,
-        )
-        ring.move_to(start)
-        self.scene.add(ring)
-        self._register_ephemeron(ring)
-        ring_anim = AnimationGroup(
-            ring.animate.scale(2.2).set_stroke(opacity=0.0),
-            run_time=0.55,
-        )
-
-        def cleanup():
-            if ring in self.scene.mobjects:
-                self.scene.remove(ring)
-            self._deregister_ephemeron(ring)
-
-        return ring_anim, cleanup
-
-    def _ev_detached_land(self, ev):
-        """Land a previously-spawned detached receipt. No green
-        shockwave, no return arc — the sequencer isn't watching, so the
-        only thing the viewer sees is a small grey pulse on the target
-        sphere and the dot fading out. That quiet is the whole point:
-        a state change happened, silently, after the sequencer already
-        released its next step.
-        """
-        detached_id = ev.get("_detached_id")
-        if detached_id is None:
-            return None
-        dot = self._detached_dots.pop(detached_id, None)
-        if dot is None:
-            return None
-        target = self.actors[ev["target"]]
-
-        # Strip the updater and snap to the exact target — otherwise
-        # frame-time jitter can leave the dot a pixel short.
-        dot.clear_updaters()
-
-        # Silent-landing pulse. Distinct from downstream_return's green
-        # pulse: grey colour + no shockwave so the viewer's eye doesn't
-        # read success. Amplitude small so it feels like a whisper.
-        pulse = Circle(
-            radius=0.06,
-            color=SILENT_GREY,
-            fill_color=SILENT_GREY,
-            fill_opacity=0.6,
-            stroke_width=1.0,
-        )
-        pulse.move_to(target.center())
-        self.scene.add(pulse)
-        self._register_ephemeron(pulse)
-
-        # State residue — sink's append receipt just executed. Reveal
-        # the persistent green tint on the target sphere so the viewer
-        # can see, at every later frame, "yes this state changed."
-        # See LiquidContract.reveal_state_residue for the semantic.
-        anims = [
-            dot.animate.move_to(target.center()).set_opacity(0.0).scale(0.45),
-            pulse.animate.scale(3.0).set_stroke(opacity=0.0).set_fill(opacity=0.0),
-        ]
-        if hasattr(target, "reveal_state_residue"):
-            anims.append(target.reveal_state_residue())
-
-        anim = AnimationGroup(
-            *anims,
-            lag_ratio=0.15,
-            run_time=self.block_seconds,
-        )
-
-        def cleanup():
-            if dot in self.scene.mobjects:
-                self.scene.remove(dot)
-            self._deregister_ephemeron(dot)
-            if pulse in self.scene.mobjects:
-                self.scene.remove(pulse)
-            self._deregister_ephemeron(pulse)
-
-        return anim, cleanup
 
     # ------------------------------------------------------------------
     # Adapter inner-chain — this repo's addition, see viz/DESIGN.md §3.3.
