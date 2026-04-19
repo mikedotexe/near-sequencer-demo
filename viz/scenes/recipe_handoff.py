@@ -7,7 +7,7 @@ receipt scheduled at yield time carries both endings.
 
 Two scenes: `RecipeHandoffClaim` (happy path, Bob claims) and
 `RecipeHandoffTimeout` (no resume, Alice refunded). Each has a Live
-variant driven by a translated testnet capture.
+variant driven by a translated testnet snapshot.
 
 Run from `viz/`:
 
@@ -17,6 +17,7 @@ Run from `viz/`:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -29,6 +30,8 @@ from manim import MovingCameraScene, UP  # noqa: E402
 from common.timeline import TimelinePlayer, load_timeline  # noqa: E402
 from common.palette import TEXT_LIGHT  # noqa: E402
 from common.typography import kerned_text  # noqa: E402
+
+_LIVE_RUN = os.environ.get("RECIPE_LIVE_RUN", "01")
 
 
 # Three actors. Alice (left) signs the yield and resume, recipes
@@ -81,7 +84,7 @@ class RecipeHandoffClaim(MovingCameraScene):
 
 class RecipeHandoffClaimLive(MovingCameraScene):
     def construct(self):
-        build(self, data_file="recipe-handoff-claim-live-01.json")
+        build(self, data_file=f"recipe-handoff-claim-live-{_LIVE_RUN}.json")
         self.wait(1.2)
 
 
@@ -101,7 +104,7 @@ class RecipeHandoffTimeoutLive(MovingCameraScene):
     def construct(self):
         build(
             self,
-            data_file="recipe-handoff-timeout-live-01.json",
+            data_file=f"recipe-handoff-timeout-live-{_LIVE_RUN}.json",
             title_text="Recipe 4 \u2014 atomic handoff (timeout)",
             idle_block_seconds=0.018,
         )

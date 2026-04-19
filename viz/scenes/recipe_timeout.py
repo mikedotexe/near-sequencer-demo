@@ -13,6 +13,7 @@ Run from `viz/`:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from manim import MovingCameraScene, UP  # noqa: E402
 from common.timeline import TimelinePlayer, load_timeline  # noqa: E402
 from common.palette import TEXT_LIGHT  # noqa: E402
 from common.typography import kerned_text  # noqa: E402
+
+_LIVE_RUN = os.environ.get("RECIPE_LIVE_RUN", "01")
 
 
 _LAYOUT = {
@@ -70,8 +73,8 @@ class RecipeTimeout(MovingCameraScene):
 
 
 class RecipeTimeoutLive(MovingCameraScene):
-    """Live variant driven by the latest translated testnet capture."""
+    """Live variant; selects snapshot via RECIPE_LIVE_RUN (default "01")."""
 
     def construct(self):
-        build(self, data_file="recipe-timeout-live-01.json")
+        build(self, data_file=f"recipe-timeout-live-{_LIVE_RUN}.json")
         self.wait(1.2)

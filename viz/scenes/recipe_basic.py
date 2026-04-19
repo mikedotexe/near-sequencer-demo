@@ -13,6 +13,7 @@ See ../DESIGN.md for the orbital-vocabulary rationale.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,12 @@ from manim import MovingCameraScene, UP  # noqa: E402
 from common.timeline import TimelinePlayer, load_timeline  # noqa: E402
 from common.palette import TEXT_LIGHT  # noqa: E402
 from common.typography import kerned_text  # noqa: E402
+
+# RECIPE_LIVE_RUN lets the Live scenes below pick which snapshotted run
+# to render against without editing this file. Defaults to "01" (the
+# first snapshotted run); set to "02", "03", etc. to target a later run:
+#   RECIPE_LIVE_RUN=02 make recipe-basic-live
+_LIVE_RUN = os.environ.get("RECIPE_LIVE_RUN", "01")
 
 
 # One caller + one contract. Horizontal axis reads left→right: caller
@@ -69,8 +76,11 @@ class RecipeBasic(MovingCameraScene):
 
 
 class RecipeBasicLive(MovingCameraScene):
-    """Live variant driven by the latest translated testnet capture."""
+    """Live variant driven by a translated testnet snapshot.
+
+    Selects the snapshot via RECIPE_LIVE_RUN (default "01").
+    """
 
     def construct(self):
-        build(self, data_file="recipe-basic-live-01.json")
+        build(self, data_file=f"recipe-basic-live-{_LIVE_RUN}.json")
         self.wait(1.2)
