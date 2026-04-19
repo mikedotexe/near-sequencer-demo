@@ -25,7 +25,6 @@ from .palette import (
     PERSON_ORANGE,
     PERSON_ORANGE_GLOW,
     PERSON_EDGE,
-    SUCCESS_GREEN,
     TEXT_DARK,
     TEXT_LIGHT,
     SPECULAR_LIGHT,
@@ -124,26 +123,6 @@ class LiquidContract(VGroup):
         hl_core.shift(np.array([-radius * 0.40, radius * 0.40, 0.0]))
         self.highlight.add(hl_soft, hl_core)
 
-        # State residue — a full-radius green overlay that stays at
-        # opacity 0 until a state-touching event calls `reveal_state_residue`.
-        # Pedagogically: the thesis is "did it happen?" and the visible
-        # answer is a persistent mark that stays on the sphere for every
-        # later frame. Positioned above body_glow and below highlight so
-        # the specular gloss stays white (light source didn't change)
-        # and text stays crisp (sits above residue).
-        #
-        # Radius at 0.97r keeps the tint just inside the stroke so it
-        # reads as "inside the sphere" rather than painting over the
-        # outline. See `reveal_state_residue` below for the fire-once
-        # behaviour (subsequent touches don't dim a previously-lit tint).
-        self.state_residue = Circle(
-            radius=radius * 0.97,
-            color=SUCCESS_GREEN,
-            fill_color=SUCCESS_GREEN,
-            fill_opacity=0.0,
-            stroke_width=0,
-        )
-
         self.name_label = kerned_text(display_name, font_size=display_font_size, color=text_color)
         self.name_label.move_to(self.body.get_center())
 
@@ -168,16 +147,12 @@ class LiquidContract(VGroup):
         # and account_id caption).
         self.caption.next_to(self.body, DOWN, buff=0.14)
 
-        # Z-order: halo (back) → body → body_glow → state_residue →
-        # highlight → label → caption. state_residue sits above the
-        # shading layers but below the specular highlight so when
-        # revealed the sphere reads green-tinted while the highlight
-        # stays white (light source didn't change — state changed).
-        # Label + caption sit above everything so readability is never
-        # at the mercy of a gradient stop.
+        # Z-order: halo (back) → body → body_glow → highlight → label →
+        # caption. Label + caption sit above everything so readability
+        # is never at the mercy of a gradient stop.
         self.add(
             self.halo,
-            self.body, self.body_glow, self.state_residue,
+            self.body, self.body_glow,
             self.highlight, self.name_label, self.caption,
         )
 
@@ -224,31 +199,6 @@ class LiquidContract(VGroup):
         c = self.body.get_center()
         r = self._radius
         return (c[0] - r, c[0] + r, c[1] - r, c[1] + r)
-
-    def reveal_state_residue(self, target_opacity: float = 0.22, run_time: float = 0.6):
-        """Fade the green state-residue overlay up to `target_opacity`.
-
-        Monotonic: if the residue is already brighter than target the
-        animation is a no-op (still returned so the caller can compose
-        it into an AnimationGroup without a None-guard). Pedagogically:
-        a contract's state having changed is a one-way door; the tint
-        persists for the rest of the scene, marking the sphere as
-        "this holds state that wasn't here before."
-
-        Call sites: every event that corresponds to a contract primitive
-        that mutates target state — currently `inner_dispatch` (adapter
-        courier reaching the target). Not fired from `downstream_return`
-        because not every downstream call is a state-mutation; we're
-        strict here so the tint stays a meaningful signal rather than
-        ambient decoration.
-        """
-        current = self.state_residue.get_fill_opacity()
-        new_opacity = max(current, target_opacity)
-        if new_opacity <= current + 1e-4:
-            # Monotonic no-op — return a zero-duration animation so the
-            # caller's AnimationGroup composition doesn't need a branch.
-            return self.state_residue.animate.set_fill(opacity=current)
-        return self.state_residue.animate.set_fill(opacity=new_opacity)
 
     def wobble(self, peak: float = 1.10, run_time: float = 0.45):
         """Brief scale pulse on body + highlight — label stays anchored.

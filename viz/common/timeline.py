@@ -26,11 +26,9 @@ from typing import Any, Callable
 import numpy as np
 from manim import (
     Scene,
-    ArcBetweenPoints,
     Circle,
     DashedVMobject,
     Dot,
-    MoveAlongPath,
     RoundedRectangle,
     VGroup,
     FadeIn,
@@ -56,8 +54,6 @@ from .legend import build_legend
 from .blooms import (
     settle_ok_bloom,
     settle_shockwave,
-    decay_ember,
-    decay_shockwave,
     downstream_tracer,
     eject_ring,
 )
@@ -189,29 +185,12 @@ class TimelinePlayer:
         # event is what brings them on screen.
         self._deferred_actors: set[str] = set()
 
-        # Camera baseline — captured here so `camera_restore` has a
-        # target to animate back to. Only `MovingCameraScene` exposes
-        # `.frame`; plain `Scene` does not, so this is a no-op there.
-        # `camera_focus` / `camera_restore` event handlers also guard
-        # on this attribute, so emitting those events in a plain Scene
-        # is a no-op rather than an error.
-        frame = getattr(self.scene.camera, "frame", None)
-        if frame is not None:
-            frame.save_state()
-
         # Orbit guides — dashed faint rings that appear under any contract
         # with a live satellite. Reference-counted per actor_id so the
         # guide is drawn once (first eject) and removed when the last
         # satellite exits. Purely ambient; no invariant depends on them.
         self._orbit_guides: dict[str, DashedVMobject] = {}
         self._orbit_guide_refs: dict[str, int] = {}
-
-        # Inner-chain couriers: small amber dots that depict an adapter's
-        # plain `.then()` FunctionCall — a receipt that's observed by
-        # the adapter's own callback, but NOT yielded (no NEP-519
-        # budget, no resume signal). See viz/DESIGN.md §3.3. Keyed by
-        # `step_id`; paired events are inner_dispatch / inner_return.
-        self._inner_dots: dict[str, Any] = {}
 
         # Block clock HUD.
         self._hud_group = None
@@ -438,24 +417,6 @@ class TimelinePlayer:
                               "The target contract returns a result via a Data receipt."),
         "settle":            ("settle — on_promise_resolved",
                               "Final callback runs with the downstream outcome; yielded promise resolved."),
-        "decay":             ("decay",
-                              "200-block budget expired; protocol auto-resumes with PromiseError::Failed."),
-        "visit_start":       ("visit_start",
-                              "Yielded callback begins its dwell before deciding buy or not."),
-        # `visit_complete` intentionally has no teach card — it's a
-        # silent tear-down event. Its pedagogy ("the dwell resolved")
-        # is already carried by visit_start's card plus the settle
-        # card that follows. Giving it a card would steal a slot at
-        # the cascade beat where every slot is load-bearing.
-        "cascade_fail":      ("cascade_fail",
-                              "Winner adopted; shop resumes losing yield_ids with a clean failure."),
-        # This repo's addition — see viz/DESIGN.md §3.3.
-        "inner_dispatch":    ("inner_dispatch",
-                              "Adapter chains .then(callback) — a plain promise chain, not a yield. The callback checks the target's callback result before the adapter resolves."),
-        # `inner_return` intentionally has no teach card; the green
-        # pulse on the adapter at its landing IS the pedagogy — the
-        # after_dispatch callback observed Ok(true), and only NOW
-        # does the adapter's outer receipt resolve.
     }
 
     _TEACH_KEEP_ALIVE_BLOCKS = 3   # short dwell so stack stays bounded
@@ -645,16 +606,8 @@ class TimelinePlayer:
             "downstream_call":    self._ev_downstream_call,
             "downstream_return":  self._ev_downstream_return,
             "settle":             self._ev_settle,
-            "decay":              self._ev_decay,
-            "visit_start":        self._ev_visit_start,
-            "visit_complete":     self._ev_visit_complete,
-            "cascade_fail":       self._ev_cascade_fail,
-            "inner_dispatch":     self._ev_inner_dispatch,
-            "inner_return":       self._ev_inner_return,
             "actor_appear":       self._ev_actor_appear,
             "narrative":          self._ev_narrative,
-            "camera_focus":       self._ev_camera_focus,
-            "camera_restore":     self._ev_camera_restore,
             "pending":            lambda _ev: None,
         }.get(ev["type"])
         if handler is None:
@@ -918,12 +871,9 @@ class TimelinePlayer:
 
         # Focal ring — a dashed amber ring that surrounds the satellite
         # while it's parked at its target, reading as "this satellite is
-        # watching its receipt." Important for Flow C: when the adapter
-        # launches an inner_dispatch courier, the β-satellite sits at
-        # the adapter — without this indicator, a viewer could confuse
-        # the parked satellite with the courier. The ring marks
-        # attention: "sequencer is still watching this" vs. the courier's
-        # one-shot amber flight.
+        # watching its receipt." Distinguishes the parked yielded callback
+        # (amber body + dashed ring = attention) from an ordinary
+        # FunctionCall receipt that doesn't persist.
         focal_ring = self._build_focal_ring(target_point)
 
         anim = AnimationGroup(
@@ -1045,7 +995,7 @@ class TimelinePlayer:
         # Focal ring retirement — in case the settle fires without a
         # preceding downstream_return (e.g. synthetic scenes where the
         # two events share a block and the return handler already
-        # cleared it, or decay-style paths). Safety-clean here too.
+        # cleared it, or timeout paths). Safety-clean here too.
         focal_ring = getattr(sat, "_focal_ring", None)
         focal_teardown = getattr(sat, "_focal_ring_cleanup", None)
         if focal_teardown is not None:
@@ -1067,9 +1017,8 @@ class TimelinePlayer:
 
         # Bloom on ok — a soft green expanding ring at the satellite's
         # last position. Purely ambient; no semantic change. Failing
-        # statuses (err/timeout) skip the green bloom — red ember is
-        # reserved for explicit decay events. `no_buy` also skips
-        # (quiet settle).
+        # statuses (err/timeout) skip the green bloom. `no_buy` also
+        # skips (quiet settle).
         bloom_mob = None
         shock_mob = None
         if status == "ok":
@@ -1109,354 +1058,14 @@ class TimelinePlayer:
 
         return anim, cleanup
 
-    def _ev_decay(self, ev):
-        sat = self.satellites.get(ev["step_id"])
-        if sat is None:
-            return None
-        sat.set_color_for_status("timeout")
-        guide_fade = self._orbit_guide_fade_on_release(ev["actor"])
-        anims = [
-            sat.radius_tracker.animate.set_value(0.0),
-            sat.animate.set_opacity(0.0),
-        ]
-        if guide_fade is not None:
-            anims.append(guide_fade)
-
-        # Ember burst at the satellite's last position — evokes
-        # disintegration at orbit end. Paired with a slower red
-        # shockwave so the terminal beat carries weight.
-        ember_mob, ember_anim = decay_ember(sat.get_center())
-        self.scene.add(ember_mob)
-        self._register_ephemeron(ember_mob)
-        anims.append(ember_anim)
-
-        shock_mob, shock_anim = decay_shockwave(sat.get_center())
-        self.scene.add(shock_mob)
-        self._register_ephemeron(shock_mob)
-        anims.append(shock_anim)
-
-        anim = AnimationGroup(*anims, lag_ratio=0.3)
-
-        def cleanup():
-            if sat.budget_ring is not None:
-                self.scene.remove(sat.budget_ring)
-            for dot in sat.trail_dots:
-                if dot in self.scene.mobjects:
-                    self.scene.remove(dot)
-            self.scene.remove(sat)
-            for m in (ember_mob, shock_mob):
-                if m in self.scene.mobjects:
-                    self.scene.remove(m)
-                self._deregister_ephemeron(m)
-            self.satellites.pop(ev["step_id"], None)
-            self._ejection_blocks.pop(ev["step_id"], None)
-            self._release_orbit_guide(ev["actor"])
-
-        return anim, cleanup
-
     # ------------------------------------------------------------------
-    # Pet Shop handlers — visit dwell + cascade-fail
+    # Authoring events — reveal + narrative
     # ------------------------------------------------------------------
-
-    def _ev_visit_start(self, ev):
-        """A yielded callback enters its active visitation window. Spawn
-        a pie-slice inside the satellite body and advance its progress
-        tracker via a per-frame updater. The updater runs in real wall
-        time, independent of `_play_batch`'s per-block `scene.play`
-        run_time compression — so a 5-block dwell actually takes 5
-        blocks × block_seconds of scene time.
-        """
-        sat = self.satellites.get(ev["step_id"])
-        if sat is None:
-            return None
-        duration_blocks = int(ev.get("duration_blocks", 5))
-        duration_seconds = max(duration_blocks * self.block_seconds, 1e-3)
-        wedge = sat.make_visit_wedge()
-        self.scene.add(wedge)
-        self._register_ephemeron(wedge)
-        tracker = sat.visit_progress
-        rate = 1.0 / duration_seconds
-
-        def _advance(_mob, dt):
-            cur = tracker.get_value()
-            if cur < 1.0:
-                tracker.set_value(min(1.0, cur + rate * dt))
-
-        sat.add_updater(_advance)
-        sat._visit_advance_fn = _advance
-        return None
-
-    def _ev_visit_complete(self, ev):
-        """Visit resolved — stop the advance updater and tear down the
-        wedge. The decision (buy / no_buy) is carried on the next
-        settle event in the same block, so this handler is visually
-        ornamental: it just clears the wedge state. The mobject is
-        removed in the cleanup pass after the batch animates.
-        """
-        sat = self.satellites.get(ev["step_id"])
-        if sat is None:
-            return None
-        advance_fn = getattr(sat, "_visit_advance_fn", None)
-        if advance_fn is not None:
-            sat.remove_updater(advance_fn)
-            sat._visit_advance_fn = None
-        wedge = sat.clear_visit_wedge()
-
-        def cleanup():
-            if wedge is not None and wedge in self.scene.mobjects:
-                self.scene.remove(wedge)
-            if wedge is not None:
-                self._deregister_ephemeron(wedge)
-
-        return None, cleanup
-
-    def _ev_cascade_fail(self, ev):
-        """Reject pending siblings that were waiting on a just-adopted
-        target. All losers drain in the same AnimationGroup as the
-        winning `settle` — that shared scene.play() call in _play_batch
-        guarantees the synchronized red beat.
-
-        Each loser gets: red tint, decay_shockwave at current position,
-        scale-down + fade, then cleanup (satellite, trails, budget ring,
-        orbit guide). Must occur in the same block as the triggering
-        settle so satellite hygiene doesn't fire an orphan error.
-        """
-        failed_ids = ev.get("failed_step_ids", [])
-        if not failed_ids:
-            return None
-        anims = []
-        shocks = []
-        sats_to_clean: list = []
-        for step_id in failed_ids:
-            sat = self.satellites.get(step_id)
-            if sat is None:
-                continue
-            sat.set_color_for_status("err")
-            pos = sat.get_center()
-            shock_mob, shock_anim = decay_shockwave(pos)
-            self.scene.add(shock_mob)
-            self._register_ephemeron(shock_mob)
-            anims.append(shock_anim)
-            anims.append(sat.animate.scale(0.3).set_opacity(0.0))
-            shocks.append(shock_mob)
-            sats_to_clean.append((step_id, sat))
-
-        # Release the orbit guide refcount once per loser — they may
-        # have been orbiting the same target pet, but the ref-counter
-        # tracks per (parent, radius) pairs, so call release per sat.
-        target_parent = ev.get("target")
-        guide_fade = None
-        if target_parent:
-            guide_fade = self._orbit_guide_fade_on_release(target_parent)
-            if guide_fade is not None:
-                anims.append(guide_fade)
-
-        # lag_ratio=0 so every red shockwave fires at the same instant
-        # the winning settle begins its green bloom. The synchronized
-        # beat is the scene's main pedagogical photograph.
-        group = AnimationGroup(*anims, lag_ratio=0.0) if anims else None
-
-        def cleanup():
-            for step_id, sat in sats_to_clean:
-                if sat.budget_ring is not None and sat.budget_ring in self.scene.mobjects:
-                    self.scene.remove(sat.budget_ring)
-                for dot in sat.trail_dots:
-                    if dot in self.scene.mobjects:
-                        self.scene.remove(dot)
-                if sat in self.scene.mobjects:
-                    self.scene.remove(sat)
-                self.satellites.pop(step_id, None)
-                self._ejection_blocks.pop(step_id, None)
-            for shock in shocks:
-                if shock in self.scene.mobjects:
-                    self.scene.remove(shock)
-                self._deregister_ephemeron(shock)
-
-        return group, cleanup
-
-    # ------------------------------------------------------------------
-    # Adapter inner-chain — this repo's addition, see viz/DESIGN.md §3.3.
-    # ------------------------------------------------------------------
-
-    def _ev_inner_dispatch(self, ev):
-        """Launch a small amber courier dot from `actor` toward `target`.
-        Depicts a plain `Promise::function_call(...).then(callback)`
-        chain — NOT a yield. No satellite, no budget ring: the adapter
-        has no NEP-519 budget, its outer receipt simply doesn't resolve
-        until the `.then()` callback runs.
-
-        Vocabulary distinction (vs. `downstream_call`):
-        - `downstream_call` flies an existing satellite (a yielded
-          callback in orbit around the caller) to the target; the
-          satellite is what the sequencer is watching.
-        - `inner_dispatch` flies a one-shot courier dot; there is no
-          satellite because the adapter is NOT using yield — it's
-          using plain `.then()` chaining inside its own receipt.
-
-        This is the truthful depiction of Flow C's inner chain. The
-        adapter owns this FunctionCall and only returns when its
-        `after_dispatch` callback has observed the target's truthful
-        result (`inner_return` fires the green pulse).
-        """
-        actor = self.actors[ev["actor"]]
-        target = self.actors[ev["target"]]
-        step_id = ev["step_id"]
-        if step_id in self._inner_dots:
-            raise LifecycleLeak(
-                f"inner_dispatch for step_id {step_id!r} but that courier "
-                f"is already in flight; pair each inner_dispatch with an inner_return"
-            )
-
-        start = np.array(actor.center(), dtype=float).copy()
-        end = np.array(target.center(), dtype=float).copy()
-
-        # Courier dot — halo + disc, amber. Visibly smaller than a
-        # satellite (≈0.32 radius) so it reads as "a one-shot receipt",
-        # not a persistent watched body. Same colour family as the
-        # satellite so the viewer knows "still amber, still a receipt
-        # the scene cares about" — but distinguished in three ways:
-        # (a) smaller disc (0.10 vs 0.32), (b) thinner halo + sharper
-        # edge (courier is a compact messenger, satellite is a watched
-        # body), (c) no budget ring.
-        #
-        # Paired with the focal ring that now surrounds the parked
-        # β-satellite (see _ev_downstream_call), this creates two
-        # distinct amber silhouettes on screen during Flow C's inner
-        # chain: the satellite in a dashed-ring halo ('watching') vs.
-        # the courier as a compact bright disc ('flying').
-        halo = Circle(
-            radius=0.14,
-            color=SATELLITE_AMBER,
-            fill_color=SATELLITE_AMBER,
-            fill_opacity=0.18,
-            stroke_width=0,
-        )
-        disc = Circle(
-            radius=0.10,
-            color=SATELLITE_EDGE,
-            fill_color=SATELLITE_AMBER_GLOW,
-            fill_opacity=0.98,
-            stroke_width=1.8,
-            stroke_opacity=0.95,
-        )
-        dot = VGroup(halo, disc)
-        dot.move_to(start)
-        self.scene.add(dot)
-        self._register_ephemeron(dot)
-        self._inner_dots[step_id] = dot
-
-        # Travel on a gentle arc — matches the curvature the tracer
-        # uses so path + tracer read as the same flight line.
-        path = ArcBetweenPoints(start=start, end=end, angle=0.55)
-        travel_anim = MoveAlongPath(dot, path, run_time=self.block_seconds)
-
-        # Amber tracer arc — same visual vocabulary as downstream_call,
-        # because the underlying primitive IS a FunctionCall receipt.
-        # The colour consistency is honest; the difference is the
-        # courier (not-a-satellite) + the inner_return green pulse on
-        # the actor (not on a satellite).
-        tracer, tracer_anim = downstream_tracer(
-            start, end, run_time=self.block_seconds * 1.6
-        )
-        self.scene.add(tracer)
-        self._register_ephemeron(tracer)
-
-        # State residue — the adapter's inner courier is heading to sink;
-        # by the end of this travel sink.append will have executed and
-        # sink's state will have changed. Pedagogically the tint fires
-        # here (not in inner_return) because the state change happens
-        # at sink's execution, which visually corresponds to the dot
-        # arriving — inner_return is just the acknowledgment coming back
-        # to the adapter.
-        anims = [
-            travel_anim,
-            tracer_anim,
-            target.wobble(),
-        ]
-        if hasattr(target, "reveal_state_residue"):
-            anims.append(target.reveal_state_residue())
-
-        anim = AnimationGroup(
-            *anims,
-            lag_ratio=0.15,
-        )
-
-        def cleanup():
-            if tracer in self.scene.mobjects:
-                self.scene.remove(tracer)
-            self._deregister_ephemeron(tracer)
-
-        return anim, cleanup
-
-    def _ev_inner_return(self, ev):
-        """The courier returns: fly the dot back to the source of the
-        dispatch (the adapter) and emit a green pulse on arrival — the
-        adapter's `after_dispatch` callback observing `Ok(true)`. The
-        dot then fades.
-
-        Distinct from `downstream_return`: no satellite moves here
-        (there never was one); the green pulse lands on the adapter
-        sphere itself, signalling "the truthful completion gate
-        fired." The outer β-satellite is still parked at the adapter
-        and only travels home on the next `downstream_return` event.
-        """
-        step_id = ev["step_id"]
-        dot = self._inner_dots.pop(step_id, None)
-        if dot is None:
-            return None
-        # `actor` is the source of the return (typically sink); `target`
-        # is where the courier lands (typically adapter).
-        dst = self.actors[ev["target"]]
-        start = np.array(dot.get_center(), dtype=float).copy()
-        end = np.array(dst.center(), dtype=float).copy()
-
-        path = ArcBetweenPoints(start=start, end=end, angle=0.55)
-        travel_anim = MoveAlongPath(dot, path, run_time=self.block_seconds)
-
-        tracer, tracer_anim = downstream_tracer(
-            start, end, run_time=self.block_seconds * 1.6
-        )
-        self.scene.add(tracer)
-        self._register_ephemeron(tracer)
-
-        # Small green bloom at the adapter — the after_dispatch gate
-        # observing Ok(true). Radius kept modest so the viewer's eye
-        # still registers the bigger outer settle (sa, β) one block
-        # later as the main beat.
-        bloom_mob, bloom_anim = settle_ok_bloom(end, radius=0.45, run_time=0.65)
-        self.scene.add(bloom_mob)
-        self._register_ephemeron(bloom_mob)
-
-        anim = AnimationGroup(
-            travel_anim,
-            tracer_anim,
-            dst.wobble(),
-            bloom_anim,
-            dot.animate.set_opacity(0.0).scale(0.5),
-            lag_ratio=0.2,
-        )
-
-        def cleanup():
-            if tracer in self.scene.mobjects:
-                self.scene.remove(tracer)
-            self._deregister_ephemeron(tracer)
-            if dot in self.scene.mobjects:
-                self.scene.remove(dot)
-            self._deregister_ephemeron(dot)
-            if bloom_mob in self.scene.mobjects:
-                self.scene.remove(bloom_mob)
-            self._deregister_ephemeron(bloom_mob)
-
-        return anim, cleanup
-
-    # ------------------------------------------------------------------
-    # Authoring events — reveal, narrative, camera
-    # ------------------------------------------------------------------
-    # These four event types don't map to NEAR contract primitives.
+    # These event types don't map to NEAR contract primitives.
     # They're authoring-level: the narrator using manim idioms to
     # direct attention (progressive reveal of a character, a thesis
-    # card, a camera lens move). Every other event type tracks 1:1
-    # with a contract primitive — these are the documented exception.
+    # card). Every other event type tracks 1:1 with a contract primitive
+    # — these are the documented exception.
 
     def _ev_actor_appear(self, ev):
         """Fade an actor into the scene mid-timeline. The actor must
@@ -1519,38 +1128,3 @@ class TimelinePlayer:
         self._callouts_pending = pending
         return None
 
-    def _ev_camera_focus(self, ev):
-        """Pull the camera toward a target with a scale factor. Only
-        meaningful on MovingCameraScene (where `camera.frame` exists).
-        No-op on plain Scene so a timeline authored with camera events
-        still plays elsewhere.
-        """
-        frame = getattr(self.scene.camera, "frame", None)
-        if frame is None:
-            return None
-        target = ev["target"]
-        if isinstance(target, str):
-            actor = self.actors.get(target)
-            if actor is None:
-                return None
-            pos = actor.get_center()
-        else:
-            # Explicit coords: [x, y] or [x, y, z].
-            coords = list(target)
-            if len(coords) == 2:
-                coords = coords + [0.0]
-            pos = np.array(coords, dtype=float)
-        scale = float(ev.get("scale", 0.7))
-        # `frame_width` on manim config is the baseline we scale from.
-        from manim import config as _manim_config
-        target_width = float(_manim_config.frame_width) * scale
-        return frame.animate.move_to(pos).set(width=target_width)
-
-    def _ev_camera_restore(self, _ev):
-        """Restore the camera frame to the baseline saved in
-        `__init__`. No-op on plain Scene.
-        """
-        frame = getattr(self.scene.camera, "frame", None)
-        if frame is None:
-            return None
-        return frame.animate.restore()

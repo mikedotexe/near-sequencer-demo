@@ -419,20 +419,12 @@ and re-sync path.
 
 - **Automation / triggers / saga templates.** Sibling owns that direction.
 - **Multi-sig.** `near/core-contracts/multisig2` is canonical.
-- **More than four recipes, *for now*.** Four is enough to teach the
-  core mechanic, the timeout, composition with cross-contract calls,
-  and atomic value transfer with safety valve — that's Volume 1. A
-  single Recipe 5 (solver-auction NEAR Intent) is sketched in
-  [`docs/volume-2-intents.md`](docs/volume-2-intents.md): contract
-  method signatures, trace events, expected DAG placements, plus the
-  two new invariants (exactly-one-winner, cascade-fail ordering) a
-  solver-contention shape needs. The viz layer already carries the
-  matching handlers (see [`viz/DESIGN.md`](viz/DESIGN.md) §"Volume 2"
-  and [`viz/common/ATTRIBUTION.md`](viz/common/ATTRIBUTION.md)), so a
-  Volume 2 ship is an additive change, not a refactor. The sketch
-  has a stated deadline — **2026-10-19** — past which the scaffolding
-  gets deleted if the sibling adapter or an external motivation
-  hasn't landed to trigger the work.
+- **More than four recipes.** Four is enough to teach the core
+  mechanic, the timeout, composition with cross-contract calls, and
+  atomic value transfer with safety valve. A potential Volume 2
+  (solver-auction intent contention) is deferred with an explicit
+  trigger + 2026-10-19 fallback in
+  [`docs/volume-2-intents.md`](docs/volume-2-intents.md).
 
 ## Voice principle — vocabulary tracks the contract
 

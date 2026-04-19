@@ -20,7 +20,6 @@ from manim import (
     Dot,
     ValueTracker,
     Arc,
-    AnnularSector,
     always_redraw,
     PI,
     TAU,
@@ -148,13 +147,6 @@ class Satellite(VGroup):
         self._body_radius = radius
         self.budget_tracker = ValueTracker(1.0)
         self.budget_ring = None  # set when attached to scene
-
-        # Visit-progress wedge. Spawned by Pet Shop (visit_start) to
-        # show the callback is mid-dwell; cleared on visit_complete.
-        # Distinct radius/colour/shape from the budget_ring so the
-        # two don't collide visually.
-        self.visit_progress: ValueTracker | None = None
-        self.visit_wedge = None
 
     # ------------------------------------------------------------------
     # Orbit mechanics
@@ -302,68 +294,6 @@ class Satellite(VGroup):
 
         self.budget_ring = always_redraw(_redraw)
         return self.budget_ring
-
-    # ------------------------------------------------------------------
-    # Visit-progress wedge
-    # ------------------------------------------------------------------
-
-    def make_visit_wedge(self):
-        """Return an always_redraw'd pie-slice whose angle grows 0 → TAU
-        as `self.visit_progress` advances 0 → 1. Spawned by a
-        `visit_start` event; caller animates `visit_progress` and
-        removes the wedge on `visit_complete`. The sector sits inside
-        the body (outer_radius < body_radius) so it reads as "this
-        callback is busy" without occluding the tag label above it.
-        """
-        if self.visit_progress is None:
-            self.visit_progress = ValueTracker(0.0)
-        # Full pie slice (no donut hole). Outer radius ~0.75× body so
-        # the wedge is visible at -ql render scale while still letting
-        # the tag text on top read cleanly.
-        inner_r = 0.0
-        outer_r = self._body_radius * 0.72
-
-        def _redraw():
-            # Guard: between visit_complete's wedge-clear and the
-            # scene.remove that follows, always_redraw can still fire
-            # on the lingering mobject. A None tracker returns a
-            # zero-opacity sentinel instead of crashing.
-            if self.visit_progress is None:
-                return AnnularSector(
-                    inner_radius=inner_r,
-                    outer_radius=outer_r,
-                    start_angle=PI / 2.0,
-                    angle=-0.001,
-                    stroke_width=0,
-                    fill_opacity=0.0,
-                )
-            prog = max(0.0, min(1.0, self.visit_progress.get_value()))
-            # Clamp small angles so AnnularSector doesn't emit zero-width geometry.
-            angle = -TAU * prog if prog > 0.002 else -0.002
-            wedge = AnnularSector(
-                inner_radius=inner_r,
-                outer_radius=outer_r,
-                start_angle=PI / 2.0,   # begin at 12 o'clock
-                angle=angle,            # sweep clockwise as visit advances
-                color="#ffffff",
-                fill_color="#ffffff",
-                fill_opacity=0.50,
-                stroke_width=0,
-            )
-            wedge.move_to(self.body.get_center())
-            return wedge
-
-        self.visit_wedge = always_redraw(_redraw)
-        return self.visit_wedge
-
-    def clear_visit_wedge(self):
-        """Detach the visit-progress wedge state. The caller is
-        responsible for removing the returned mobject from the scene
-        (same pattern as `budget_ring`)."""
-        wedge = self.visit_wedge
-        self.visit_wedge = None
-        self.visit_progress = None
-        return wedge
 
     # ------------------------------------------------------------------
     # Trail

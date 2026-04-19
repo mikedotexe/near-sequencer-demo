@@ -341,22 +341,14 @@ Candidates we considered and rejected:
   `yield_id.resume`), not an observable protocol property. Covered
   by unit tests in `contracts/recipes/`.
 
-## Growing the set: Volume 2
+## Growing the set
 
-If [`volume-2-intents.md`](volume-2-intents.md) ships, two more
-invariants join the set:
-
-- **Exactly-one-winner.** Per intent run, exactly one `solver_won`
-  event; no intent adopts two solvers.
-- **Cascade-fail ordering.** Every losing solver receives a
-  `solver_lost` event in the same commit tx, before any downstream
-  `intent_executing`. Prevents a losing solver from observing target
-  state before the winner has been atomically selected.
-
-Both are contention-specific; Volume 1 has no contention so they
-don't apply yet. The infrastructure (`checkX` + `computeXInvariant` +
-summary propagation + report rendering + CI grep) supports n
-invariants; adding two more is additive.
+The `checkX` + `computeXInvariant` + report + CI infrastructure
+supports *n* invariants, not just four — new claims slot in without
+refactor. [`volume-2-intents.md`](volume-2-intents.md) sketches two
+contention-specific invariants that would land if a solver-auction
+recipe ever ships, but Volume 2 is deferred: "four is enough" is the
+working claim until a concrete trigger fires.
 
 ## Testnet and mainnet
 

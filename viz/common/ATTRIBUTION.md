@@ -17,10 +17,10 @@ All `*.py` files in this directory were vendored from the sibling repo:
 | `blooms.py` | 159 | `settle_ok_bloom`, `eject_ring`, `downstream_tracer`, `decay_ember`, `decay_shockwave`. |
 | `legend.py` | 102 | Colour / shape legend panel. |
 | `palette.py` | 29 | Colour constants. |
-| `satellite.py` | 399 | `Satellite` VGroup with orbit / budget-ring / settle / decay behaviours. |
-| `sphere.py` | 310 | `LiquidContract` and `PersonActor` primitives. |
+| `satellite.py` | 329 | `Satellite` VGroup with orbit / budget-ring / settle / decay behaviours. |
+| `sphere.py` | 260 | `LiquidContract` and `PersonActor` primitives. |
 | `teach.py` | 90 | First-appearance vocabulary card. |
-| `timeline.py` | 1556 | `TimelinePlayer` event dispatch + fatal invariants. |
+| `timeline.py` | 1130 | `TimelinePlayer` event dispatch + fatal invariants. |
 | `typography.py` | 63 | `kerned_text` helper. |
 
 The line counts above reflect the vendored copy after local pruning
@@ -39,41 +39,6 @@ imports and dead-code branches don't confuse readers:
   the visuals for un-watched receipts that the sibling uses; the
   recipe book's four recipes never schedule a receipt the sequencer
   isn't tracking.
-
-## Retained as Volume 2 scaffolding
-
-The following handlers are present in `timeline.py` even though no
-current (Volume 1) recipe emits them. They are *intentionally* kept as
-the starting vocabulary for the next volume of recipes — a NEAR Intents
-primer and the adapter / asserted policy patterns the sibling
-`smart-account-contract` runs in production. See
-[`../DESIGN.md`](../DESIGN.md) §"Volume 2 — Intents primer" for the
-composition recipe that would exercise them.
-
-- `visit_start` / `visit_complete` — active decision windows inside the
-  200-block budget (solver deliberation, oracle consultation).
-- `cascade_fail` — multi-winner contention (first-valid-solver; losing
-  siblings resume cleanly with `PromiseError`).
-- `inner_dispatch` / `inner_return` — adapter-chain courier: a
-  FunctionCall with `.then(callback)` inside a yielded receipt where
-  the callback verifies truthful results before resolving.
-- `decay` — timeout as physical disintegration (ember + shockwave),
-  distinct from the current `settle` with `status="timeout"` to enable
-  near-miss storytelling at the 200-block boundary.
-- `camera_focus` / `camera_restore` — authoring cinema tools for
-  split-screen comparisons and time compression in longer narrated
-  scenes.
-
-Removing these is a one-line delete per handler if Volume 2 gets
-descoped; keeping them costs ~260 lines of dormant code and avoids
-re-vendoring the primitives from scratch later.
-
-**Deadline:** [`../../docs/volume-2-intents.md`](../../docs/volume-2-intents.md)
-commits to deleting these handlers by **2026-10-19** if Volume 2
-hasn't been pursued by then. Check `git log --since=2026-04-19 --
-viz/common/timeline.py docs/volume-2-intents.md` at that date; if the
-log shows no substantive edits, pull the plug per that doc's removal
-list.
 
 ## Why vendor rather than import cross-repo
 

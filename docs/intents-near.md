@@ -147,9 +147,9 @@ wants to pause and wait for a signal that doesn't exist yet.
 If NEAR ever wanted to model an intent with an open bidding window
 (N solvers racing for M blocks, with the contract adjudicating
 exactly one winner inside the callback), yield/resume would be the
-natural primitive. That hypothetical is sketched in
-[`volume-2-intents.md`](volume-2-intents.md) as a pedagogical Recipe 5
-that has not yet shipped.
+natural primitive. [`volume-2-intents.md`](volume-2-intents.md)
+records that hypothetical as deferred work — not currently planned,
+with an explicit trigger for when it might ship.
 
 ## Methodology
 
