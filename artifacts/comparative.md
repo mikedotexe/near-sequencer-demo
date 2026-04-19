@@ -1,11 +1,18 @@
 # NEP-519 recipe book — testnet vs mainnet comparison
 
-The four invariants ([`docs/invariants.md`](../docs/invariants.md))
-are protocol-correctness claims about NEP-519's `yield`/`resume`
-primitive. They should hold on any NEAR network. This report
-shows how they held side-by-side on both testnet (lighter load,
-sparse traffic) and mainnet (real validator cohort, real cross-
-shard receipt forwarding under the demo's account layout).
+**What this report is.** The side-by-side empirical evidence for
+the claim that the `recipes` contract achieves *contract-controlled
+sequential receipt execution across block boundaries* on both NEAR
+networks. Four machine-checked invariants
+([`docs/invariants.md`](../docs/invariants.md)) are the proof surface:
+each is a spec-level consequence of NEP-519 yield/resume, and each
+holds identically under testnet's lighter load and mainnet's real
+validator cohort + real cross-shard receipt forwarding. For the
+architectural contrast with NEAR's other composition patterns — why
+`intents.near` uses synchronous batching instead — see
+[`docs/intents-near.md`](../docs/intents-near.md). For three
+independent-verification paths a reader can run locally, see
+[`docs/verification.md`](../docs/verification.md).
 
 ## Invariants at a glance
 

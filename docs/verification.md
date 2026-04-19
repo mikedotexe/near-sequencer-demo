@@ -1,11 +1,63 @@
 # Verification — confirming the four invariants independently
 
-The repository commits two full artifact trees — `artifacts/testnet/` and
-`artifacts/mainnet/` — each containing a frozen receipt-DAG snapshot per
-run plus the auditor's parsed results. A reader who wants to confirm
-the four invariants (DAG-placement, Budget, Atomicity, Shard-placement)
-without trusting us has three independent paths, in increasing order
-of rigor and effort.
+## What you are verifying
+
+NEAR's default execution model is asynchronous: every transaction
+fans out into a receipt DAG, and once all receipts resolve, the tx
+is done. A contract cannot pause itself mid-flow and wait for a
+signal that doesn't exist yet. The only tools are fire-and-forget
+function calls and `Promise.then()` continuations on downstream
+receipts whose execution has already started.
+
+[NEP-519](https://github.com/near/NEPs/blob/master/neps/nep-0519.md)
+adds a different primitive: `Promise::new_yield` schedules a
+callback receipt that sits in a yielded-receipts queue until either
+(a) the contract calls `yield_id.resume(payload)` from a later
+transaction, or (b) the 200-block budget elapses. In both branches
+the same pre-scheduled receipt fires exactly once, with either the
+resume payload or a `PromiseError` on the Err arm. The contract
+controls the pause.
+
+This repo demonstrates that pattern — **contract-controlled
+sequential receipt execution across block boundaries** — with four
+recipes, then machine-checks four invariants on every run to prove
+it actually works on mainnet. Verifying those four invariants
+yourself is verifying, concretely:
+
+- **DAG-placement** — the callback receipt lives in the *yield*
+  tx's DAG, not the resume tx's. Proves the runtime is delivering
+  payloads to pre-scheduled receipts, not creating new ones on
+  resume. (Without this, resume would just be a normal
+  cross-contract call and the whole sequencing story collapses.)
+- **Budget** — the 200-block timeout fires within the
+  spec'd window on mainnet (observed: 202 blocks, every run, both
+  networks). Proves the runtime's timer on yielded receipts is
+  real and deterministic.
+- **Atomicity** (Recipe 4 / handoff) — when resume lands, the
+  contract's callback atomically transfers the escrowed value to
+  the recipient nominated at yield time. Proves the sequencing
+  primitive composes with value transfer: you can use yield/resume
+  to escrow and settle, not just to wait.
+- **Shard-placement** — the yielded callback executes on the
+  contract's home shard regardless of which shard the resume tx
+  was signed from. Proves the runtime is routing payloads back to
+  where the YieldId was registered. (Cross-shard resume would
+  otherwise fracture the sequencing.)
+
+For the contrast with NEAR's other composition patterns — why
+`intents.near` uses synchronous batching instead, and what
+architectural choice the pause-across-blocks primitive makes
+possible — see [`intents-near.md`](intents-near.md). For the full
+derivation of each invariant (NEP-519 semantics + observable
+signature + code pointer), see [`invariants.md`](invariants.md).
+
+## Three independent paths, in order of rigor
+
+The repository commits two full artifact trees — `artifacts/testnet/`
+and `artifacts/mainnet/` — each containing a frozen receipt-DAG
+snapshot per run plus the auditor's parsed results. A reader who
+wants to confirm the four invariants without trusting us has three
+independent paths, in increasing order of rigor and effort.
 
 ## Path 1 — Eyeball via block explorer (2 min)
 
@@ -235,3 +287,33 @@ Each path has a different trust model and different failure mode:
 Combined, the three paths make the claim
 "four invariants hold on every run, on both networks" verifiable with
 essentially no remaining trust in the repo's good faith.
+
+## What a green verification proves
+
+If all three paths complete cleanly — or even just path 2 — you have
+confirmed, on real NEAR chain data, that:
+
+1. A NEAR contract scheduled a callback receipt at block `N`, then
+   its transaction completed and left that receipt pending.
+2. Up to 200 blocks later, either a separate resume transaction
+   delivered a payload to the pre-scheduled receipt, or the runtime
+   itself delivered a `PromiseError` when the budget expired.
+3. Either way, the callback fired exactly once, emitted its trace
+   events into the *original* yield tx's DAG, and (for Recipe 4)
+   atomically moved value to the recipient bound at yield time.
+4. Every callback executed on the recipes contract's home shard,
+   regardless of which shard the resume transaction was signed on.
+
+That sequence — *pause, wait, resume, act* — is not expressible with
+`Promise.then()` callbacks or with synchronous batching (the pattern
+`intents.near` uses; see [`intents-near.md`](intents-near.md)). It
+is the defining capability of NEP-519, and the four PASSing
+invariants on [`../artifacts/comparative.md`](../artifacts/comparative.md)
+are the proof it works as specified, on the real chain, under real
+validator load.
+
+Concretely, a green run means NEAR mainnet's runtime is honoring
+the contract's request to sequence its own receipt execution across
+block boundaries, and this repo's four machine-checked invariants
+are the place you can see that with bytes-on-disk evidence instead
+of taking anyone's word for it.

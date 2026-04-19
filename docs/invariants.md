@@ -1,17 +1,50 @@
 # Four invariants of NEP-519 yield/resume
 
-The recipes in this repo make four specific claims about how NEAR's
-[NEP-519 yield/resume](https://github.com/near/NEPs/blob/master/neps/nep-0519.md)
-primitive behaves. Each claim is machine-checked on every snapshotted
-run and surfaces on the top of
-[`../artifacts/testnet/report.md`](../artifacts/testnet/report.md).
-This document explains *why* each invariant exists — derivation from
-NEP-519 semantics, what a violation would mean, and where it's
-enforced in code.
+## What these invariants are proving, in aggregate
 
-The empirical status (how many runs currently PASS) lives in
-`report.md`'s "Invariants at a glance" header. This document stays
-the same as runs accumulate; only the report's counts move.
+This repo demonstrates **contract-controlled sequential receipt
+execution across block boundaries** using NEAR's
+[NEP-519 yield/resume](https://github.com/near/NEPs/blob/master/neps/nep-0519.md)
+primitive — a capability that plain `Promise.then()` chains and
+synchronous batching (the `intents.near`-style approach; see
+[`intents-near.md`](intents-near.md)) can't express. The four
+invariants below are the bytes-on-chain proof that NEAR mainnet's
+runtime is honoring the contract's pause-and-resume request as
+specified:
+
+- **DAG-placement** proves *pause* is real (the callback receipt is
+  scheduled at yield time, before any resume could possibly arrive).
+- **Budget** proves *wait* is real and time-bounded (the 200-block
+  timer on the pre-scheduled receipt fires deterministically).
+- **Atomicity** proves *resume-and-act* composes with value (the
+  callback can atomically settle economic flows, not just log).
+- **Shard-placement** proves *route-back* is real (the yielded
+  callback executes on the contract's home shard regardless of the
+  resume tx's shard).
+
+Together they confirm that a NEAR contract can pause itself, wait
+for a signal across block boundaries, and resume deterministically
+— the "sequencing primitive" narrative in
+[`../README.md`](../README.md) and
+[`intents-near.md`](intents-near.md). To confirm these invariants
+independently on your own machine (no trust in this repo required),
+see [`verification.md`](verification.md).
+
+## About this document
+
+This doc explains *why* each invariant exists — derivation from
+NEP-519 semantics, what a violation would mean, and where it's
+enforced in code. Each claim is machine-checked on every snapshotted
+run and surfaces on the top of
+[`../artifacts/testnet/report.md`](../artifacts/testnet/report.md)
+and
+[`../artifacts/mainnet/report.md`](../artifacts/mainnet/report.md).
+
+The empirical status (how many runs currently PASS) lives in those
+`report.md` headers and in the side-by-side
+[`../artifacts/comparative.md`](../artifacts/comparative.md). This
+document stays the same as runs accumulate; only the report's
+counts move.
 
 ## At a glance
 

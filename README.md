@@ -228,6 +228,15 @@ ending fires.
 
 ## Four invariants, machine-checked on every run
 
+These four invariants are the proof surface for the sequencing claim
+from the TL;DR: *the contract paused itself, waited across block
+boundaries, and resumed deterministically on NEAR mainnet.* Each
+claim is derived from NEP-519 semantics (see
+[`docs/invariants.md`](docs/invariants.md) for the full derivation);
+each is machine-checked per run; each can be independently confirmed
+by a reader without trusting this repo
+([`docs/verification.md`](docs/verification.md)).
+
 The mental model that makes all four recipes coherent:
 **`Promise::new_yield` schedules the callback receipt at yield time.**
 The receipt exists, lives in the yield tx's DAG, and waits for input.
