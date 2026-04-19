@@ -18,12 +18,11 @@ import {
   blockByHash,
   blockByHeight,
   chunkByHash,
-  txStatus,
   type BlockResult,
   type ChunkResult,
   type TxStatusResult,
 } from "./rpc.js";
-import type { OnchainSnapshot, SnapshotStatus } from "./snapshot.js";
+import { snapshotOnChain, writeOnchainSnapshot, type OnchainSnapshot, type SnapshotStatus, type SnapshotTx } from "./snapshot.js";
 import type {
   RawArtifact,
   RawBasicArtifact,
@@ -81,13 +80,24 @@ function findTraceEvents(logs: string[], recipe: RecipeName, name: string): Trac
 // Snapshot source
 // ---------------------------------------------------------------------------
 //
-// Prefer locally snapshotted data; fall back to live RPC.
+// Audits read receipt DAGs from the cached `run-NN.onchain.json` beside each
+// `run-NN.raw.json`. When the onchain.json is absent, the auditor rebuilds it
+// by calling `snapshotOnChain(...)` against the archival RPC (the same flow
+// that wrote it originally) and writes the result back to the same path.
+// This is the critical behavior that powers docs/verification.md's "path 3"
+// — a reader can `rm *.onchain.json` and re-audit to independently
+// reconstruct the snapshots from archival without trusting the committed
+// snapshot bytes.
+//
+// There is intentionally no "live-RPC audit" mode that skips writing the
+// snapshot to disk: such a mode once existed but deviated from the
+// snapshotted code path (different caching shape, no chunk coverage) and
+// never produced correct invariant results. Audits always run against a
+// materialized on-disk snapshot.
 
 interface SnapshotSource {
-  kind: "onchain_json" | "live_rpc";
-  // Overall snapshot health propagated from onchain.json. For live_rpc
-  // sources we synthesize a "complete" status since failures would throw
-  // out of the audit path rather than being recorded.
+  kind: "onchain_json";
+  // Overall snapshot health propagated from onchain.json.
   snapshotStatus: SnapshotStatus;
   getTxByRole(role: string): TxStatusResult | null;
   getBlockByHash(hash: string): Promise<BlockResult | null>;
@@ -104,7 +114,28 @@ const COMPLETE_SNAPSHOT_STATUS: SnapshotStatus = {
   chunkFailures: [],
 };
 
-function buildSnapshotSource(raw: RawArtifact, recipeDir: string): SnapshotSource {
+// Per-recipe role -> tx-hash mapping. Shared by `buildSnapshotTxs` (for
+// on-demand re-snapshot) and historically by the removed live-RPC source.
+function snapshotTxsForRaw(raw: RawArtifact): SnapshotTx[] {
+  const txs: SnapshotTx[] = [];
+  if (raw.recipe === "basic" || raw.recipe === "chained") {
+    txs.push({ role: "yield", hash: raw.yieldTxHash, signer: raw.signer });
+    txs.push({ role: "resume", hash: raw.resumeTxHash, signer: raw.signer });
+  } else if (raw.recipe === "timeout") {
+    txs.push({ role: "yield", hash: raw.yieldTxHash, signer: raw.signer });
+  } else {
+    // handoff: resumeTxHash is null in timeout mode.
+    txs.push({ role: "yield", hash: raw.yieldTxHash, signer: raw.signer });
+    if (raw.resumeTxHash) {
+      // Claim-mode runs use the claim signer (usually master) for resume.
+      const resumeSigner = raw.mode === "claim" ? (raw.claimSigner ?? raw.signer) : raw.signer;
+      txs.push({ role: "resume", hash: raw.resumeTxHash, signer: resumeSigner });
+    }
+  }
+  return txs;
+}
+
+async function buildSnapshotSource(raw: RawArtifact, recipeDir: string): Promise<SnapshotSource> {
   // Handoff writes mode-prefixed filenames (e.g. run-claim-01.onchain.json)
   // so claim/timeout runs can share the dir without collisions. Other
   // recipes use plain zero-padded runIndex.
@@ -117,7 +148,27 @@ function buildSnapshotSource(raw: RawArtifact, recipeDir: string): SnapshotSourc
     const snapshot = JSON.parse(readFileSync(onchainPath, "utf8")) as OnchainSnapshot;
     return localSource(snapshot);
   }
-  return liveSource(raw);
+  // Missing snapshot — rebuild from archival RPC and persist. See the
+  // module-level comment above; docs/verification.md path 3 depends on
+  // this being the single auditor entry point.
+  process.stderr.write(
+    `[audit]   no snapshot at ${onchainPath}; re-fetching from archival RPC...\n`,
+  );
+  const txs = snapshotTxsForRaw(raw);
+  const snapshot = await snapshotOnChain(txs);
+  if (snapshot.snapshotStatus.overall === "failed") {
+    throw new Error(
+      `archival re-fetch failed: yield tx ${raw.yieldTxHash.slice(0, 10)} not available. ` +
+        `Check FastNEAR archival retention; fall back to an alternate archival provider via RPC_AUDIT env.`,
+    );
+  }
+  writeOnchainSnapshot(onchainPath, snapshot);
+  const nBlocks = Object.keys(snapshot.blocks).length;
+  const nChunks = Object.keys(snapshot.chunks).length;
+  process.stderr.write(
+    `[audit]   wrote ${onchainPath} (${nBlocks} blocks, ${nChunks} chunks, status=${snapshot.snapshotStatus.overall})\n`,
+  );
+  return localSource(snapshot);
 }
 
 function localSource(snapshot: OnchainSnapshot): SnapshotSource {
@@ -130,89 +181,6 @@ function localSource(snapshot: OnchainSnapshot): SnapshotSource {
     snapshotStatus: snapshot.snapshotStatus ?? COMPLETE_SNAPSHOT_STATUS,
     getTxByRole(role) {
       return snapshot.txStatus[role] ?? null;
-    },
-    async getBlockByHash(hash) {
-      const cached = blocksByHash.get(hash);
-      if (cached) return cached;
-      try {
-        const fetched = await blockByHash(hash);
-        blocksByHash.set(hash, fetched);
-        blocksByHeight.set(fetched.header.height, fetched);
-        return fetched;
-      } catch {
-        return null;
-      }
-    },
-    async getBlockByHeight(height) {
-      const cached = blocksByHeight.get(height);
-      if (cached) return cached;
-      try {
-        const fetched = await blockByHeight(height);
-        blocksByHeight.set(height, fetched);
-        blocksByHash.set(fetched.header.hash, fetched);
-        return fetched;
-      } catch {
-        return null;
-      }
-    },
-    async getChunkByHash(hash) {
-      const cached = chunksByHash.get(hash);
-      if (cached) return cached;
-      try {
-        const fetched = await chunkByHash(hash);
-        chunksByHash.set(hash, fetched);
-        return fetched;
-      } catch {
-        return null;
-      }
-    },
-  };
-}
-
-function liveSource(raw: RawArtifact): SnapshotSource {
-  const txCache: Record<string, TxStatusResult | null> = {};
-  // Pre-populate role -> tx hash mapping from the raw artifact.
-  const roleToHash: Record<string, string> = {};
-  if (raw.recipe === "basic") {
-    roleToHash.yield = raw.yieldTxHash;
-    roleToHash.resume = raw.resumeTxHash;
-  } else if (raw.recipe === "timeout") {
-    roleToHash.yield = raw.yieldTxHash;
-  } else if (raw.recipe === "chained") {
-    roleToHash.yield = raw.yieldTxHash;
-    roleToHash.resume = raw.resumeTxHash;
-  } else {
-    // handoff: resumeTxHash is null in timeout mode.
-    roleToHash.yield = raw.yieldTxHash;
-    if (raw.resumeTxHash) roleToHash.resume = raw.resumeTxHash;
-  }
-
-  const blocksByHash = new Map<string, BlockResult>();
-  const blocksByHeight = new Map<number, BlockResult>();
-  const chunksByHash = new Map<string, ChunkResult>();
-  return {
-    kind: "live_rpc",
-    snapshotStatus: COMPLETE_SNAPSHOT_STATUS,
-    getTxByRole(role) {
-      // Synchronous accessor; live-RPC source fetches lazily on first
-      // invocation by tracking a per-role cache keyed on hash.
-      if (role in txCache) return txCache[role] ?? null;
-      const hash = roleToHash[role];
-      if (!hash) return null;
-      // Kick off an async fetch and cache via promise — but the sync
-      // shape forces us to return null this call. Next time the role
-      // is requested the cached value is present. For a single audit
-      // run this means live-RPC callers must invoke getTxByRole twice
-      // (first to trigger fetch, second to observe). Simple, but if
-      // live-RPC auditing becomes common refactor this to Promise<T>.
-      txStatus(hash, raw.signer)
-        .then((t) => {
-          txCache[role] = t;
-        })
-        .catch(() => {
-          txCache[role] = null;
-        });
-      return null;
     },
     async getBlockByHash(hash) {
       const cached = blocksByHash.get(hash);
@@ -687,7 +655,11 @@ interface AuditBase {
   runIndex: number;
   name: string;
   signer: string;
-  auditSource: "onchain_json" | "live_rpc";
+  // Always "onchain_json" since the only SnapshotSource kind is the
+  // on-disk snapshot (re-fetched from archival on demand if missing).
+  // Kept as a named field rather than a boolean so the report layer can
+  // surface the source without reading the env or the snapshot itself.
+  auditSource: "onchain_json";
   // Whether the underlying snapshot was complete, partial, or failed.
   // Lets the report tell apart "no value because snapshot dropped" from
   // "no value because the field doesn't apply to this recipe". Optional
@@ -872,7 +844,7 @@ function findResolvedOutcomeInAllTxs(
 // ---------------------------------------------------------------------------
 
 async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<BasicAudit> {
-  const src = buildSnapshotSource(raw, recipeDir);
+  const src = await buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const resumeTx = src.getTxByRole("resume");
   const yieldHeight = await txBlockHeight(src, yieldTx);
@@ -930,7 +902,7 @@ async function auditBasic(raw: RawBasicArtifact, recipeDir: string): Promise<Bas
 }
 
 async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise<TimeoutAudit> {
-  const src = buildSnapshotSource(raw, recipeDir);
+  const src = await buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const yieldHeight = (await txBlockHeight(src, yieldTx)) ?? raw.yieldBlockHeight;
 
@@ -979,7 +951,7 @@ async function auditTimeout(raw: RawTimeoutArtifact, recipeDir: string): Promise
 }
 
 async function auditChained(raw: RawChainedArtifact, recipeDir: string): Promise<ChainedAudit> {
-  const src = buildSnapshotSource(raw, recipeDir);
+  const src = await buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const resumeTx = src.getTxByRole("resume");
   const yieldHeight = await txBlockHeight(src, yieldTx);
@@ -1082,7 +1054,7 @@ function findSettleEventInAllTxs(
 }
 
 async function auditHandoff(raw: RawHandoffArtifact, recipeDir: string): Promise<HandoffAudit> {
-  const src = buildSnapshotSource(raw, recipeDir);
+  const src = await buildSnapshotSource(raw, recipeDir);
   const yieldTx = src.getTxByRole("yield");
   const resumeTx = raw.resumeTxHash ? src.getTxByRole("resume") : null;
   const yieldHeight = (await txBlockHeight(src, yieldTx)) ?? raw.yieldBlockHeight;

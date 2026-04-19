@@ -91,32 +91,44 @@ NEAR_NETWORK=mainnet ./scripts/demo.sh audit chained
 NEAR_NETWORK=mainnet ./scripts/demo.sh audit handoff
 ```
 
-With no local snapshot, `snapshotSource` falls through to
-`archival-rpc.mainnet.fastnear.com`, reconstructing the receipt DAG
-from the `tx_hash + signer_id` pair in each `run-NN.raw.json`. The
-new snapshot is written back to the same filename, then the auditor
-re-runs against it and writes a fresh `run-NN.audit.json`.
+With no local snapshot, the auditor reconstructs the receipt DAG
+from archival RPC using the `tx_hash + signer_id` pair in each
+`run-NN.raw.json`, calling the same `snapshotOnChain()` code path
+that wrote the snapshot originally. Expected output per run:
 
-**What to compare.** A byte-level diff of the *newly fetched*
-`run-NN.onchain.json` against the committed version will show a
-different `snapshotAt` timestamp (the auditor stamps
-`new Date().toISOString()` on each write) and may reorder
-block/chunk map keys — that's expected and not a divergence signal.
-The deterministic comparison is `run-NN.audit.json`:
+```
+[audit]   no snapshot at artifacts/mainnet/recipe-basic/run-01.onchain.json; re-fetching from archival RPC...
+[audit]   wrote artifacts/mainnet/recipe-basic/run-01.onchain.json (6 blocks, 6 chunks, status=complete)
+[audit basic]   (onchain_json) resolved_ok with payload="hello-1"; yield→resume=4b; resume→callback=2b
+```
+
+**What to compare.** The reconstructed `run-NN.onchain.json` will
+differ from the committed version in exactly two fields:
+`snapshotAt` (the auditor stamps `new Date().toISOString()` on each
+write) and `latestBlockAtSnapshotHeight` (the chain tip at the
+moment of re-fetch). All other bytes — blocks, chunks, receipt
+outcomes — are byte-identical to the committed version.
+
+The deterministic comparison surface is `run-NN.audit.json`, which
+derives only from receipt content and carries no wall-clock fields:
 
 ```sh
 git diff artifacts/mainnet/**/run-*.audit.json
 # → empty if the re-fetched chain data audits identically
 ```
 
-`audit.json` carries no timestamps and derives only from receipt
-content, so a semantic divergence between our committed data and
-reality shows up here as a non-empty diff. All four invariants must
-still print `PASS` in the command output as well.
+This repo ships with this exact check passing — a full `rm *.onchain.json`
++ re-audit against FastNEAR archival leaves zero bytes of diff in
+any of the 10 committed `audit.json` files (and two-field drift in
+each `onchain.json` as described above). That's the "nothing to
+trust" proof: the four invariants derived from freshly-fetched
+archival data match the four committed invariant results exactly.
+All four invariants must also print `PASS` in the command output.
 
-If you want a rougher onchain-level sanity check, `jq 'del(.snapshotAt)'
-run-NN.onchain.json` on both sides and diff the normalized JSON —
-anything remaining is real divergence.
+If you want a rougher onchain-level sanity check,
+`jq 'del(.snapshotAt, .latestBlockAtSnapshotHeight)' run-NN.onchain.json`
+on both sides and diff the normalized JSON — anything remaining is
+real divergence.
 
 **Constraint: archival retention.** FastNEAR's free archival tier
 covers the recent past; if you try this long after the commit date,
