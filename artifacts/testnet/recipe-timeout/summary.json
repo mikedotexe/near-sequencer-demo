@@ -8,6 +8,27 @@
     "median": 202,
     "count": 1
   },
+  "dagInvariant": {
+    "held": true,
+    "runsChecked": 1,
+    "runsWithViolations": 0,
+    "eventsChecked": 2,
+    "eventsInExpectedPlace": 2,
+    "violations": []
+  },
+  "budgetInvariant": {
+    "held": true,
+    "runsChecked": 1,
+    "runsInRange": 1,
+    "runsOutOfRange": 0,
+    "runsNotEvaluable": 0,
+    "lowerBound": 200,
+    "upperBound": 205,
+    "observedBlocks": [
+      202
+    ],
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "timeout",
@@ -15,6 +36,12 @@
       "name": "r01-1776572920532",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "yieldTxHash": "6z7USAzwMTpHT49QwmkzfT1uktiQ3APLtpSJCcNHjXbp",
       "yieldBlockHeight": 246406204,
       "callbackBlockHeight": 246406406,
@@ -26,7 +53,14 @@
         "recipe_yielded": "yield",
         "recipe_resolved_err": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "budgetInvariant": {
+        "held": true,
+        "evaluable": true,
+        "observedBlocks": 202,
+        "lowerBound": 200,
+        "upperBound": 205
+      }
     }
   ]
 }

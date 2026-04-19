@@ -5,6 +5,12 @@
   "name": "r01-timeout-1776575650185",
   "signer": "mike.testnet",
   "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
   "recipient": "bob.mike.testnet",
   "amountYocto": "10000000000000000000000",
   "yieldTxHash": "Hds1Rz9Untn3KfhUnWmyqzkgy7sFontUZLJcBVJqTkkF",
@@ -25,5 +31,25 @@
     "handoff_offered": "yield",
     "handoff_refunded": "yield"
   },
-  "dagInvariantViolations": []
+  "dagInvariantViolations": [],
+  "atomicityInvariant": {
+    "held": true,
+    "evaluable": true,
+    "mode": "timeout",
+    "expectedRecipient": "mike.testnet",
+    "expectedAmountYocto": "10000000000000000000000",
+    "observed": {
+      "receiptId": "ApK9bYALHBJpkDX3FdcFDoU6iT5MfpQW4mj7UaNz3R6c",
+      "receiverId": "mike.testnet",
+      "depositYocto": "10000000000000000000000",
+      "succeeded": true
+    }
+  },
+  "budgetInvariant": {
+    "held": true,
+    "evaluable": true,
+    "observedBlocks": 202,
+    "lowerBound": 200,
+    "upperBound": 205
+  }
 }

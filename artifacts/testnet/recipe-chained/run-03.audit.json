@@ -4,6 +4,12 @@
   "name": "r03-1776572532438",
   "signer": "mike.testnet",
   "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
   "counterId": "recipes-counter.mike.testnet",
   "delta": 1,
   "yieldTxHash": "Hf7qnFSJPgjUcE6orFhdtSR18wJAzRNsdR7jeu3hrMM2",

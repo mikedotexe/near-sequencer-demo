@@ -29,6 +29,34 @@
     "median": 202,
     "count": 1
   },
+  "dagInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsWithViolations": 0,
+    "eventsChecked": 14,
+    "eventsInExpectedPlace": 14,
+    "violations": []
+  },
+  "budgetInvariant": {
+    "held": true,
+    "runsChecked": 1,
+    "runsInRange": 1,
+    "runsOutOfRange": 0,
+    "runsNotEvaluable": 0,
+    "lowerBound": 200,
+    "upperBound": 205,
+    "observedBlocks": [
+      202
+    ],
+    "violations": []
+  },
+  "atomicityInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsAtomicallyHeld": 3,
+    "runsNotEvaluable": 0,
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "handoff",
@@ -37,6 +65,12 @@
       "name": "r01-claim-1776575599074",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "recipient": "bob.mike.testnet",
       "amountYocto": "10000000000000000000000",
       "yieldTxHash": "F67JHLG8PPZqY5dLmnkJfhbLkU7xxS4AkZm7nNdhciBS",
@@ -58,7 +92,20 @@
         "handoff_offered": "yield",
         "handoff_released": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "atomicityInvariant": {
+        "held": true,
+        "evaluable": true,
+        "mode": "claim",
+        "expectedRecipient": "bob.mike.testnet",
+        "expectedAmountYocto": "10000000000000000000000",
+        "observed": {
+          "receiptId": "9vNdxmZdWciSXtax62PkRjQ3v95wHum5JbfefBVot3fv",
+          "receiverId": "bob.mike.testnet",
+          "depositYocto": "10000000000000000000000",
+          "succeeded": true
+        }
+      }
     },
     {
       "recipe": "handoff",
@@ -67,6 +114,12 @@
       "name": "r02-claim-1776575621289",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "recipient": "bob.mike.testnet",
       "amountYocto": "10000000000000000000000",
       "yieldTxHash": "6K11oqRYzdoCvNLySaKeykFiAJiAB9bSVKgMvhmPRrdD",
@@ -88,7 +141,20 @@
         "handoff_offered": "yield",
         "handoff_released": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "atomicityInvariant": {
+        "held": true,
+        "evaluable": true,
+        "mode": "claim",
+        "expectedRecipient": "bob.mike.testnet",
+        "expectedAmountYocto": "10000000000000000000000",
+        "observed": {
+          "receiptId": "HawFXq5a5uJyatxcMaW6ACQhRscKCTW8Vnhu7kLVtzHt",
+          "receiverId": "bob.mike.testnet",
+          "depositYocto": "10000000000000000000000",
+          "succeeded": true
+        }
+      }
     },
     {
       "recipe": "handoff",
@@ -97,6 +163,12 @@
       "name": "r01-timeout-1776575650185",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "recipient": "bob.mike.testnet",
       "amountYocto": "10000000000000000000000",
       "yieldTxHash": "Hds1Rz9Untn3KfhUnWmyqzkgy7sFontUZLJcBVJqTkkF",
@@ -117,7 +189,27 @@
         "handoff_offered": "yield",
         "handoff_refunded": "yield"
       },
-      "dagInvariantViolations": []
+      "dagInvariantViolations": [],
+      "atomicityInvariant": {
+        "held": true,
+        "evaluable": true,
+        "mode": "timeout",
+        "expectedRecipient": "mike.testnet",
+        "expectedAmountYocto": "10000000000000000000000",
+        "observed": {
+          "receiptId": "ApK9bYALHBJpkDX3FdcFDoU6iT5MfpQW4mj7UaNz3R6c",
+          "receiverId": "mike.testnet",
+          "depositYocto": "10000000000000000000000",
+          "succeeded": true
+        }
+      },
+      "budgetInvariant": {
+        "held": true,
+        "evaluable": true,
+        "observedBlocks": 202,
+        "lowerBound": 200,
+        "upperBound": 205
+      }
     }
   ]
 }

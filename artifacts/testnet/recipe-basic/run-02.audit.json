@@ -4,6 +4,12 @@
   "name": "r02-1776572424930",
   "signer": "mike.testnet",
   "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
   "yieldTxHash": "8XQC48gj9zgBucMz5GgpbbZALBy4TfBm6nysYCeqS1q2",
   "yieldBlockHeight": 246405350,
   "resumeTxHash": "J4afSRSCvrHJRqKozjP8DQB8St5aSWPJ4qB7unXkCv6V",

@@ -25,6 +25,14 @@
     0,
     1
   ],
+  "dagInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsWithViolations": 0,
+    "eventsChecked": 15,
+    "eventsInExpectedPlace": 15,
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "chained",
@@ -32,6 +40,12 @@
       "name": "r01-1776572473829",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "counterId": "recipes-counter.mike.testnet",
       "delta": 1,
       "yieldTxHash": "8nPnLRn3iteo7tmjAKQuwApQ5j6yEdGGQiiC1oMfDfxs",
@@ -62,6 +76,12 @@
       "name": "r02-1776572502963",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "counterId": "recipes-counter.mike.testnet",
       "delta": -1,
       "yieldTxHash": "7mDmoKSZTKU3HwfFUvJTvy2vYdTZvoPq1ajgWvbonaDP",
@@ -92,6 +112,12 @@
       "name": "r03-1776572532438",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "counterId": "recipes-counter.mike.testnet",
       "delta": 1,
       "yieldTxHash": "Hf7qnFSJPgjUcE6orFhdtSR18wJAzRNsdR7jeu3hrMM2",

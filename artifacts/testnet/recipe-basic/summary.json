@@ -14,23 +14,37 @@
     "median": 2,
     "count": 3
   },
+  "dagInvariant": {
+    "held": true,
+    "runsChecked": 3,
+    "runsWithViolations": 0,
+    "eventsChecked": 9,
+    "eventsInExpectedPlace": 9,
+    "violations": []
+  },
   "runs": [
     {
       "recipe": "basic",
       "runIndex": 1,
-      "name": "r01-1776572402162",
+      "name": "r01-1776575237207",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
-      "yieldTxHash": "HpdDq1MkuQVRrqFHi7hc8xyCKhuLss1KMDnaxP6Lbmb9",
-      "yieldBlockHeight": 246405312,
-      "resumeTxHash": "GnXxby6XuKnEmyKQMeuU181zGx635puLkkG9KmEc3wzH",
-      "resumeBlockHeight": 246405316,
-      "callbackBlockHeight": 246405318,
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
+      "yieldTxHash": "58N5pcnEeRB8XgPvegbxP7iwD9w5eBW8bg8sonLoXsoM",
+      "yieldBlockHeight": 246410282,
+      "resumeTxHash": "7Yg4hCSSxF7egnCUjPfLu9c8b8vUynktxHe3ve3gjh37",
+      "resumeBlockHeight": 246410286,
+      "callbackBlockHeight": 246410288,
       "resolvedOk": true,
       "resolvedPayload": "hello-1",
       "blocksFromYieldToResume": 4,
       "blocksFromResumeToCallback": 2,
-      "explorerUrl": "https://testnet.nearblocks.io/txns/GnXxby6XuKnEmyKQMeuU181zGx635puLkkG9KmEc3wzH",
+      "explorerUrl": "https://testnet.nearblocks.io/txns/7Yg4hCSSxF7egnCUjPfLu9c8b8vUynktxHe3ve3gjh37",
       "interpretation": "resolved_ok with payload=\"hello-1\"; yield→resume=4b; resume→callback=2b",
       "dagPlacement": {
         "recipe_yielded": "yield",
@@ -45,6 +59,12 @@
       "name": "r02-1776572424930",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "yieldTxHash": "8XQC48gj9zgBucMz5GgpbbZALBy4TfBm6nysYCeqS1q2",
       "yieldBlockHeight": 246405350,
       "resumeTxHash": "J4afSRSCvrHJRqKozjP8DQB8St5aSWPJ4qB7unXkCv6V",
@@ -69,6 +89,12 @@
       "name": "r03-1776572448105",
       "signer": "mike.testnet",
       "auditSource": "onchain_json",
+      "snapshotStatus": {
+        "overall": "complete",
+        "txStatusFailures": [],
+        "blockFailures": [],
+        "chunkFailures": []
+      },
       "yieldTxHash": "7kpBo1zmcMEYoWLCcTW1fy9yUtS2ZNtzKXoB7kEZsRJF",
       "yieldBlockHeight": 246405389,
       "resumeTxHash": "8URtjY1SS4EZY7Rz18qLcmNpxzUBY4ZQrJ7Q1LDn7UqZ",

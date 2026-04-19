@@ -5,6 +5,12 @@
   "name": "r01-claim-1776575599074",
   "signer": "mike.testnet",
   "auditSource": "onchain_json",
+  "snapshotStatus": {
+    "overall": "complete",
+    "txStatusFailures": [],
+    "blockFailures": [],
+    "chunkFailures": []
+  },
   "recipient": "bob.mike.testnet",
   "amountYocto": "10000000000000000000000",
   "yieldTxHash": "F67JHLG8PPZqY5dLmnkJfhbLkU7xxS4AkZm7nNdhciBS",
@@ -26,5 +32,18 @@
     "handoff_offered": "yield",
     "handoff_released": "yield"
   },
-  "dagInvariantViolations": []
+  "dagInvariantViolations": [],
+  "atomicityInvariant": {
+    "held": true,
+    "evaluable": true,
+    "mode": "claim",
+    "expectedRecipient": "bob.mike.testnet",
+    "expectedAmountYocto": "10000000000000000000000",
+    "observed": {
+      "receiptId": "9vNdxmZdWciSXtax62PkRjQ3v95wHum5JbfefBVot3fv",
+      "receiverId": "bob.mike.testnet",
+      "depositYocto": "10000000000000000000000",
+      "succeeded": true
+    }
+  }
 }
