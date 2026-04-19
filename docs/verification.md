@@ -45,17 +45,18 @@ against them:
 
 ```sh
 git clone https://github.com/mikedotexe/near-sequencer-demo
-cd near-sequencer-demo/scripts && npm install && cd ..
+cd near-sequencer-demo
+(cd scripts && npm install)   # needs Node 18+
 NEAR_NETWORK=mainnet ./scripts/demo.sh audit basic
 NEAR_NETWORK=mainnet ./scripts/demo.sh audit timeout
 NEAR_NETWORK=mainnet ./scripts/demo.sh audit chained
 NEAR_NETWORK=mainnet ./scripts/demo.sh audit handoff
 ```
 
-The auditor prefers the cached `run-NN.onchain.json` over any RPC
-fetch (see `snapshotSource` in
-[`scripts/src/audit.ts`](../scripts/src/audit.ts)), so the four
-commands run without network access. Each prints a one-line
+No `.env` / API key required for path 2 — the auditor prefers the
+cached `run-NN.onchain.json` over any RPC fetch (see `snapshotSource`
+in [`scripts/src/audit.ts`](../scripts/src/audit.ts)), so the four
+commands run with no network access. Each prints a one-line
 interpretation per run and exits non-zero on any invariant violation.
 Expected output:
 
@@ -66,9 +67,11 @@ Expected output:
 ...
 ```
 
-The committed `run-NN.audit.json` beside each snapshot is the
-reference result — a verifier can `diff` their own audit output
-against the committed one. Deterministic.
+After the auditor runs it rewrites `run-NN.audit.json` in-place. The
+committed `run-NN.audit.json` is the reference result — `git diff
+artifacts/mainnet/` after re-audit should be empty. `audit.json`
+carries no wall-clock timestamps or run-order fields, so comparison
+is byte-exact and deterministic.
 
 This path trusts nothing about either network — everything verifiable
 from data already in the repo.
@@ -83,21 +86,51 @@ mainnet archival endpoint:
 ```sh
 rm artifacts/mainnet/recipe-*/run-*.onchain.json
 NEAR_NETWORK=mainnet ./scripts/demo.sh audit basic
-# (and timeout, chained, handoff)
+NEAR_NETWORK=mainnet ./scripts/demo.sh audit timeout
+NEAR_NETWORK=mainnet ./scripts/demo.sh audit chained
+NEAR_NETWORK=mainnet ./scripts/demo.sh audit handoff
 ```
 
 With no local snapshot, `snapshotSource` falls through to
 `archival-rpc.mainnet.fastnear.com`, reconstructing the receipt DAG
 from the `tx_hash + signer_id` pair in each `run-NN.raw.json`. The
-new snapshot is written back to the same filename; a `git diff` on
-the reconstructed `run-NN.onchain.json` vs. the committed version
-should be semantically empty (stable-hashed ordering). Any
-divergence = evidence we tampered with the commit.
+new snapshot is written back to the same filename, then the auditor
+re-runs against it and writes a fresh `run-NN.audit.json`.
 
-Constraint: this depends on FastNEAR's archival retention window.
-The free tier covers the recent past; if you try this long after the
-commit date, receipts may fall out of the archive. In that case use
-path 1 or 2, or a paid archival provider.
+**What to compare.** A byte-level diff of the *newly fetched*
+`run-NN.onchain.json` against the committed version will show a
+different `snapshotAt` timestamp (the auditor stamps
+`new Date().toISOString()` on each write) and may reorder
+block/chunk map keys — that's expected and not a divergence signal.
+The deterministic comparison is `run-NN.audit.json`:
+
+```sh
+git diff artifacts/mainnet/**/run-*.audit.json
+# → empty if the re-fetched chain data audits identically
+```
+
+`audit.json` carries no timestamps and derives only from receipt
+content, so a semantic divergence between our committed data and
+reality shows up here as a non-empty diff. All four invariants must
+still print `PASS` in the command output as well.
+
+If you want a rougher onchain-level sanity check, `jq 'del(.snapshotAt)'
+run-NN.onchain.json` on both sides and diff the normalized JSON —
+anything remaining is real divergence.
+
+**Constraint: archival retention.** FastNEAR's free archival tier
+covers the recent past; if you try this long after the commit date,
+some receipts may fall out of the archive (the auditor reports
+`snapshotStatus.overall = partial` in that case and emits which
+block/chunk fetches failed). If retention has expired, fall back to
+path 1 or 2, or point the pipeline at a paid archival provider by
+setting `RPC_AUDIT=<your-archival-endpoint>` in `.env`.
+
+**Optional: higher rate limits.** The free tier is enough for a
+~10-run re-fetch, but if you hit rate limits, create a FastNEAR key at
+[dashboard.fastnear.com](https://dashboard.fastnear.com) and set
+`FASTNEAR_API_KEY=...` in `.env`. One key works for both RPC and
+archival.
 
 ## Wasm verification — prove the deployed contract matches this repo's source
 
@@ -118,38 +151,51 @@ captures the sha256 of the exact wasm that was deployed:
 atomic tx — see
 [`docs/mainnet-readiness.md#secure-init-atomic-createdeployinit`](mainnet-readiness.md#secure-init--atomic-createdeployinit).)
 
-To verify the deployed contract was built from the source in this
-repo:
+Three steps. All commands run from the repo root; the only extra
+prerequisite beyond path 2's `npm install` is Rust + the wasm32 target
+(`rustup target add wasm32-unknown-unknown`).
+
+**1. Build the wasm locally from this commit and hash it.**
 
 ```sh
-# 1. Build the wasm locally from this commit.
 cargo build --release --target wasm32-unknown-unknown -p recipes
-
-# 2. Hash the resulting wasm.
 shasum -a 256 target/wasm32-unknown-unknown/release/recipes.wasm
 # → 891c9bbecbdb14f5fc6f891315ea9004677b5b3bf35aa106164fdd658a8033ff
-
-# 3. Compare to the on-chain contract's code_hash. near CLI:
-near state recipes.mike.near
-# or via RPC directly:
-curl -s https://rpc.mainnet.fastnear.com -H "content-type: application/json" -d '{
-  "jsonrpc":"2.0","id":1,"method":"view_account",
-  "params":{"finality":"final","account_id":"recipes.mike.near"}
-}' | jq -r '.result.code_hash'
-# → (base58-encoded form of the same 32 bytes)
+#   (matches wasmSha256 in artifacts/mainnet/deploys.json)
 ```
 
-Note: NEAR expresses `code_hash` in base58; `shasum` emits hex. Both
-encode the same 32 bytes. A tiny converter:
+**2. Convert the hex digest to base58 so it's comparable with NEAR's
+`code_hash` format.** The repo already has `bs58` vendored via
+`scripts/node_modules/near-api-js` — no extra install:
 
 ```sh
-python3 -c "import hashlib, base58; \
-  print(base58.b58encode(bytes.fromhex('891c9bbecbdb14f5fc6f891315ea9004677b5b3bf35aa106164fdd658a8033ff')).decode())"
+NODE_PATH=./scripts/node_modules node -e '
+  const bs58 = require("bs58"); const m = bs58.default || bs58;
+  console.log(m.encode(Buffer.from(process.argv[1], "hex")))
+' 891c9bbecbdb14f5fc6f891315ea9004677b5b3bf35aa106164fdd658a8033ff
+# → AEEA3kTGzrktu8N2T5pFVr7KBHLekznkPA2SCVev8SVU
 ```
 
-Matching hashes = the deployed contract was compiled from this repo
-at this commit. Note that rust builds are reproducible only with a
-fixed toolchain; `rust-toolchain.toml` pins the version.
+**3. Fetch the live `code_hash` from mainnet RPC and compare:**
+
+```sh
+curl -s https://rpc.mainnet.fastnear.com -H "content-type: application/json" -d '{
+  "jsonrpc":"2.0","id":1,"method":"query",
+  "params":{"request_type":"view_account","finality":"final","account_id":"recipes.mike.near"}
+}' | python3 -c "import sys, json; print(json.load(sys.stdin)['result']['code_hash'])"
+# → AEEA3kTGzrktu8N2T5pFVr7KBHLekznkPA2SCVev8SVU
+```
+
+Matching bytes = the deployed contract was compiled from this repo's
+source at this commit.
+
+**Reproducibility caveat.** Rust + cargo builds are not bit-reproducible
+by default across machines — differences in linker, `CARGO_HOME`, build
+paths, and toolchain version all perturb the bytes. The deploy
+referenced above was built with stable rust + near-sdk 5.26.1 (pinned in
+`Cargo.toml`). If the hash doesn't match but the on-chain behavior
+does, paths 1/2/3 still confirm the invariants — the wasm check is
+additional corroboration, not a prerequisite.
 
 ## What if something doesn't match
 
