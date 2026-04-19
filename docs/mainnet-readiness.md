@@ -152,44 +152,56 @@ steady state because every yield path pairs with a cleanup:
 **Per-run net state delta: 0.** A 10-run capture, start to finish,
 leaves both maps empty.
 
-### External-abuse risk
+### External-abuse protection (owner-gated yields)
 
-Recipes 1–3 are permissionless by design — it's part of the teaching
-claim that anyone can yield. On mainnet, a spammer could call
-`recipe_basic_yield("spam-1")`, `recipe_basic_yield("spam-2")`, etc.
-without ever resuming. Each of those yields also pairs with a
-200-block timeout callback that would clean up via
-`on_basic_resumed`'s Err arm — **but** `on_basic_resumed` and
-`on_chained_resumed` don't currently remove the key on the Err path
-(they only emit `recipe_resolved_err`). Only `on_timeout_resumed`
-and `on_handoff_resumed` clean up unconditionally.
+The four `recipe_*_yield` methods are gated by an `owner_id` bound
+at `new(owner_id)` init time. `self.assert_owner()` at the top of
+each yield method fires
+`require!(env::predecessor_account_id() == self.owner_id, ...)`, so
+only the owner (the demo's master account —
+`mike.testnet` / `mike.near` depending on network) can enter the
+yield path on this contract. Contract source:
+[`contracts/recipes/src/lib.rs`](../contracts/recipes/src/lib.rs)
+`fn assert_owner`. The init wiring in
+[`scripts/src/accounts.ts`](../scripts/src/accounts.ts) passes
+`owner_id: MASTER_ACCOUNT_ID` to the recipes contract's `new` call.
 
-Consequence: a spam flood on basic/chained would leak ~40 bytes of
-state per yielded entry. At the `recipes.<master>` contract's
-3 NEAR initial balance (covering ~100KB per NEAR of NEAR storage
-at the current protocol rate), that's headroom for roughly 7M spam
-entries before the contract hits its storage ceiling and stops
-accepting new state.
+Resume methods stay permissionless — Recipe 4's
+`recipe_handoff_resume` in particular is *supposed* to be callable
+by anyone (it's the "anyone can pull the trigger" teaching claim).
+The gate is on the write side (state mutation via yields) only.
 
-**Mitigation options (none required for the 10-run capture):**
+Without this gate, a mainnet spammer could call
+`recipe_basic_yield("spam-1")`, `recipe_basic_yield("spam-2")`,
+etc., and — because `on_basic_resumed` / `on_chained_resumed` emit
+their trace logs on the Err arm without calling
+`self.yields.remove()` on timeout — leak ~40 bytes of state per
+orphan entry. With the 3 NEAR per-contract initial balance (covering
+~100KB per NEAR of NEAR storage at the current protocol rate), the
+ceiling would be roughly 7M spam entries before new state is
+rejected. Owner-gating the yield methods eliminates that vector
+entirely at the contract boundary.
 
-1. **Accept the risk.** The 10-run capture never exercises the abuse
-   path; state returns to empty. If mainnet traffic on the demo
-   contract ever grows beyond that, revisit.
-2. **Add unconditional cleanup to `on_basic_resumed` /
-   `on_chained_resumed`.** One line each at the top of the callback:
-   `self.yields.remove(&format!("basic:{name}"));` — same pattern
-   `on_timeout_resumed` uses today. Preserves the permissionless
-   semantics while closing the leak.
-3. **Add access control.** `require!(env::predecessor_account_id() ==
-   env::current_account_id() || env::predecessor_account_id() ==
-   Self::owner())` on yield methods. Breaks the "permissionless"
-   teaching claim so not ideal, but is the most defensive option.
+### Existing testnet deploy
 
-Option 2 is the cleanest incremental hardening and would be a small
-follow-up commit if the demo ever accumulates external usage. For
-the initial mainnet capture, option 1 (accept + monitor) is
-sufficient.
+The live testnet contract at `recipes.mike.testnet` was deployed
+before the owner-gate landed. Its state layout predates the
+`owner_id` field, so a simple re-deploy of the new wasm would fail
+to deserialize state. Options:
+
+1. **Leave it.** The committed testnet artifacts were generated
+   against the old contract and remain valid proof-of-run. The
+   invariants are protocol-level claims and hold identically on
+   both contract versions. Readers verifying via the committed
+   report.md don't observe any difference.
+2. **Clean + redeploy testnet.**
+   `NEAR_NETWORK=testnet ./scripts/demo.sh clean --i-know-this-is-testnet`
+   followed by `./scripts/demo.sh deploy` gives a fresh owner-gated
+   testnet contract. Regenerating artifacts (`./scripts/demo.sh all`)
+   would replace the committed ones with fresh captures.
+
+Either is acceptable; the mainnet deploy (M3 below) uses the
+owner-gated version from the start either way.
 
 ## What's next after a clean capture
 

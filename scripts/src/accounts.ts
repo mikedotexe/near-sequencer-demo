@@ -18,12 +18,18 @@ import {
 } from "./config.js";
 import { accountExists, connectSender } from "./rpc.js";
 
-// Both contracts take a parameterless `new()` initializer. This differs
-// from the sibling smart-account-contract's richer init (it takes an
-// owner_id); the recipes contract is intentionally permissionless — any
-// caller may yield and resume — so no owner binding is wired.
+// The `recipes` contract's `new()` takes an `owner_id` that gates the
+// four `recipe_*_yield` methods. Set to MASTER_ACCOUNT_ID so the demo
+// master (who signs all broadcast txs) is authorized to yield while
+// anyone else is blocked at the contract boundary. Resume methods
+// stay permissionless by design — Recipe 4's "anyone can pull the
+// trigger" is a teaching claim. Closes the mainnet state-abuse
+// vector documented in docs/mainnet-readiness.md.
+//
+// The `counter` contract has no owner — it's the canonical NEAR
+// counter and takes no init parameters.
 const INIT_ARGS: Record<AccountKey, Record<string, unknown>> = {
-  recipes: {},
+  recipes: { owner_id: MASTER_ACCOUNT_ID },
   counter: {},
 };
 

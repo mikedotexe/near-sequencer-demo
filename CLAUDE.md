@@ -50,8 +50,15 @@ Recipe 4 (handoff) has its own `handoffs: BTreeMap<String, HandoffMeta>`
 because it carries access-control metadata (the nominated recipient).
 Storage keys use `"{recipe}:{name}"` in both maps.
 
-Per-recipe public API (all permissionless for recipes 1–3; recipe 4
-enforces access control on resume):
+Per-recipe public API. The four `recipe_*_yield` methods are gated
+by an owner check (`self.assert_owner()`) — `owner_id` is bound at
+init time and stored on the contract. Resume methods stay
+permissionless so Recipe 4's "anyone can pull the trigger" teaching
+claim still holds. The owner gate closes the mainnet state-abuse
+vector where a spammer could call `recipe_basic_yield("spam-1")`,
+never resume, and leak ~40 bytes of state per orphan entry. See
+`docs/mainnet-readiness.md#state-hygiene-on-recipesmaster` for the
+full analysis.
 
 - `recipe_basic_yield(name) -> Promise` / `recipe_basic_resume(name, payload)`
 - `recipe_timeout_yield(name) -> Promise` (no paired resume)

@@ -218,6 +218,16 @@ pub struct HandoffMeta {
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Recipes {
+    // The account allowed to call the four `recipe_*_yield` methods.
+    // Bound at init time and never changed. Resume methods stay
+    // permissionless (Recipe 4's `recipe_handoff_resume` in particular
+    // is *supposed* to be callable by anyone — it's the "anyone can
+    // pull the trigger" teaching claim). This owner gate on yields
+    // closes the state-growth vector where a mainnet spammer could
+    // call `recipe_basic_yield("spam-1")`, `("spam-2")`, … and leak
+    // ~40 bytes of state per never-resumed entry. See
+    // `docs/mainnet-readiness.md` for the full analysis.
+    owner_id: AccountId,
     // Outstanding yields for recipes 1–3, keyed by `"{recipe}:{name}"`.
     // Entries are inserted by `recipe_*_yield` and removed by the
     // corresponding `recipe_*_resume` before the resume call fires.
@@ -230,11 +240,17 @@ pub struct Recipes {
 #[near]
 impl Recipes {
     #[init]
-    pub fn new() -> Self {
+    pub fn new(owner_id: AccountId) -> Self {
         Self {
+            owner_id,
             yields: BTreeMap::new(),
             handoffs: BTreeMap::new(),
         }
+    }
+
+    /// View helper: the bound owner account.
+    pub fn owner_id(&self) -> AccountId {
+        self.owner_id.clone()
     }
 
     /// View helper: keys of currently outstanding yields (recipes 1–3).
@@ -245,6 +261,15 @@ impl Recipes {
     /// View helper: keys of currently outstanding handoffs (recipe 4).
     pub fn handoffs_in_flight(&self) -> Vec<String> {
         self.handoffs.keys().cloned().collect()
+    }
+
+    // Internal: gate yield methods. Kept private (no `pub`) because
+    // it's a contract-internal invariant helper, not an API.
+    fn assert_owner(&self) {
+        require!(
+            env::predecessor_account_id() == self.owner_id,
+            "only the owner can call this yield method"
+        );
     }
 
     // =======================================================================
@@ -264,6 +289,7 @@ impl Recipes {
     // On timeout (if resume never arrives), it fires with `Err(PromiseError)`.
 
     pub fn recipe_basic_yield(&mut self, name: String) -> Promise {
+        self.assert_owner();
         require!(!name.is_empty(), "name must not be empty");
         let key = format!("basic:{name}");
         require!(
@@ -351,6 +377,7 @@ impl Recipes {
     // separate "expired" map; this recipe keeps things minimal.
 
     pub fn recipe_timeout_yield(&mut self, name: String) -> Promise {
+        self.assert_owner();
         require!(!name.is_empty(), "name must not be empty");
         let key = format!("timeout:{name}");
         require!(
@@ -431,6 +458,7 @@ impl Recipes {
     // target's actual return value.
 
     pub fn recipe_chained_yield(&mut self, name: String, counter_id: AccountId) -> Promise {
+        self.assert_owner();
         require!(!name.is_empty(), "name must not be empty");
         let key = format!("chained:{name}");
         require!(
@@ -585,6 +613,7 @@ impl Recipes {
 
     #[payable]
     pub fn recipe_handoff_yield(&mut self, name: String, to: AccountId) -> Promise {
+        self.assert_owner();
         require!(!name.is_empty(), "name must not be empty");
         let key = format!("handoff:{name}");
         require!(
@@ -796,7 +825,7 @@ mod tests {
 
     fn new_contract() -> Recipes {
         testing_env!(ctx_caller().build());
-        Recipes::new()
+        Recipes::new(caller())
     }
 
     // --- Recipe 1: Basic ------------------------------------------------
@@ -806,6 +835,30 @@ mod tests {
         let mut c = new_contract();
         let _ = c.recipe_basic_yield("hello".into());
         assert_eq!(c.yields_in_flight(), vec!["basic:hello".to_string()]);
+    }
+
+    // Owner-gate regression. All four `recipe_*_yield` methods share
+    // the same `self.assert_owner()` call; testing basic covers the
+    // gate path. The other three are covered implicitly — if
+    // `assert_owner` broke, every yield test with caller=owner would
+    // still pass (they're correct), but this test catches the shape
+    // of the gate itself.
+    #[test]
+    #[should_panic(expected = "only the owner can call this yield method")]
+    fn basic_yield_rejects_non_owner() {
+        testing_env!(ctx_caller().build());
+        let mut c = Recipes::new(contract_id()); // owner = contract_id(), caller = caller()
+        // predecessor is still `caller()`, so the gate fires.
+        let _ = c.recipe_basic_yield("hello".into());
+    }
+
+    #[test]
+    fn owner_id_round_trips_through_init() {
+        // Sanity check on the init parameter; protects against a
+        // future refactor dropping the field on the serialized state.
+        testing_env!(ctx_caller().build());
+        let c = Recipes::new(contract_id());
+        assert_eq!(c.owner_id(), contract_id());
     }
 
     #[test]
@@ -965,7 +1018,7 @@ mod tests {
     #[test]
     fn handoff_yield_records_meta_in_map() {
         testing_env!(ctx_caller_with_deposit(one_hundredth_near()).build());
-        let mut c = Recipes::new();
+        let mut c = Recipes::new(caller());
         let _ = c.recipe_handoff_yield("gift".into(), bob());
         assert_eq!(c.handoffs_in_flight(), vec!["handoff:gift".to_string()]);
     }
@@ -981,7 +1034,7 @@ mod tests {
     #[should_panic(expected = "name must not be empty")]
     fn handoff_yield_rejects_empty_name() {
         testing_env!(ctx_caller_with_deposit(one_hundredth_near()).build());
-        let mut c = Recipes::new();
+        let mut c = Recipes::new(caller());
         let _ = c.recipe_handoff_yield(String::new(), bob());
     }
 
@@ -989,7 +1042,7 @@ mod tests {
     #[should_panic(expected = "handoff already exists for this name")]
     fn handoff_yield_rejects_duplicate_name() {
         testing_env!(ctx_caller_with_deposit(one_hundredth_near()).build());
-        let mut c = Recipes::new();
+        let mut c = Recipes::new(caller());
         let _ = c.recipe_handoff_yield("gift".into(), bob());
         let _ = c.recipe_handoff_yield("gift".into(), bob());
     }
@@ -1001,7 +1054,7 @@ mod tests {
         // map cleanup; the actual yield_id.resume call cannot be driven
         // under testing_env! (see cross-tx mechanics doc).
         testing_env!(ctx_caller_with_deposit(one_hundredth_near()).build());
-        let mut c = Recipes::new();
+        let mut c = Recipes::new(caller());
         let _ = c.recipe_handoff_yield("gift".into(), bob());
         // A stranger calls resume. We expect it to panic downstream
         // because the mock's yield_id.resume will fail (testing_env!
@@ -1018,7 +1071,7 @@ mod tests {
     #[should_panic(expected = "no handoff found for this name")]
     fn handoff_resume_without_prior_yield_panics() {
         testing_env!(ctx_bob_no_deposit().build());
-        let mut c = Recipes::new();
+        let mut c = Recipes::new(caller());
         c.recipe_handoff_resume("never-was".into());
     }
 
@@ -1028,7 +1081,7 @@ mod tests {
         // can observe. The key insight: the Ok branch returns a Promise
         // (the transfer to Bob), not a Value.
         testing_env!(ctx_self().build());
-        let mut c = Recipes::new();
+        let mut c = Recipes::new(caller());
         let _promise = c.on_handoff_resumed(
             "gift".into(),
             caller(),
@@ -1043,7 +1096,7 @@ mod tests {
         // The Err arm refunds Alice (from). Still returns a Promise,
         // not a Value — the single receipt carries both endings.
         testing_env!(ctx_self().build());
-        let mut c = Recipes::new();
+        let mut c = Recipes::new(caller());
         let _promise = c.on_handoff_resumed(
             "gift".into(),
             caller(),
