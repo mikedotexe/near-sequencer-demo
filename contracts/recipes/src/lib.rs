@@ -97,34 +97,62 @@ const GAS_OBSERVE_CALLBACK: Gas = Gas::from_tgas(30);
 // might someday parse events from other contracts (the counter target,
 // future recipes, etc.). Clippy flags the shared prefix; we keep it.
 #[allow(clippy::enum_variant_names)]
+// Each variant is a specific observable moment the audit pipeline
+// uses to reconstruct a run's lifecycle and enforce the four invariants.
+// See docs/invariants.md for the full derivation of each invariant.
 #[derive(Serialize)]
 #[serde(crate = "near_sdk::serde", tag = "ev", rename_all = "snake_case")]
 enum TraceEvent {
+    // Emitted by every `recipe_*_yield` method. Anchors the yield tx
+    // and block height in the DAG — the reference point that
+    // DAG-placement and Budget invariants measure deltas from.
     RecipeYielded {
         recipe: String,
         name: String,
     },
+    // Emitted by every `recipe_*_resume` method. The **only** trace
+    // event that lives in the resume tx's DAG (not the yield tx's);
+    // DAG-placement asserts this explicitly — everything else must
+    // land back on the yield tx's receipts_outcome.
     RecipeResumed {
         recipe: String,
         name: String,
         payload: String,
     },
+    // Emitted from any `on_*_resumed` callback's Ok arm. Proves the
+    // pre-scheduled callback receipt fired with a real resume payload;
+    // its presence in the yield tx's DAG (not the resume tx's) is
+    // direct evidence that resume is payload-delivery to an existing
+    // receipt, not creation of a new one. Core of DAG-placement.
     RecipeResolvedOk {
         recipe: String,
         name: String,
         outcome: String,
     },
+    // Emitted from any `on_*_resumed` callback's Err arm. On the
+    // timeout paths (Recipe 2 + Recipe 4 timeout-mode), the carrying
+    // receipt's block height minus the yield tx's is the observable
+    // checked by the Budget invariant — empirically 202 blocks, both
+    // networks, every run.
     RecipeResolvedErr {
         recipe: String,
         name: String,
         reason: String,
     },
+    // Recipe 3 only. Emitted when the resumed callback dispatches its
+    // downstream FunctionCall (counter.increment / decrement).
+    // Still lives in the yield tx's DAG — proves resume composes with
+    // cross-contract calls without breaking DAG-placement.
     RecipeDispatched {
         recipe: String,
         name: String,
         target: String,
         method: String,
     },
+    // Recipe 3 only. Emitted by `on_counter_observed`, the `.then()`
+    // callback on the downstream dispatch. Demonstrates that yield/
+    // resume composes cleanly with NEAR's standard callback pattern:
+    // Recipe 3 resolves only after this event fires.
     RecipeCallbackObserved {
         recipe: String,
         name: String,
@@ -134,6 +162,11 @@ enum TraceEvent {
     // that the generic `Recipe*` events don't have room for. They're
     // emitted alongside the generic events so DAG-placement audit stays
     // keyed on the generic vocabulary.
+    //
+    // Emitted by `recipe_handoff_yield`; records who offered what to
+    // whom at yield time. The `to` field is what Atomicity checks the
+    // eventual Transfer receipt against — the resumer cannot redirect
+    // funds because `to` was bound at yield time, not resume time.
     HandoffOffered {
         recipe: String,
         name: String,
@@ -141,12 +174,21 @@ enum TraceEvent {
         to: String,
         amount: String, // yoctoNEAR as u128 decimal string (JSON-safe)
     },
+    // Emitted by the Ok arm of `on_handoff_resumed`, alongside
+    // `RecipeResolvedOk`. The Atomicity invariant asserts a Transfer
+    // receipt with this `to` and `amount` and a SuccessValue status
+    // appears in the yield tx's DAG — the economic demonstration that
+    // yield/resume settles value atomically, not just information.
     HandoffReleased {
         recipe: String,
         name: String,
         to: String,
         amount: String,
     },
+    // Emitted by the Err arm of `on_handoff_resumed` (timeout).
+    // Completes the Atomicity story: on the timeout branch the same
+    // pre-scheduled callback receipt refunds the signer instead of
+    // paying out — one receipt, two endings, picked by the runtime.
     HandoffRefunded {
         recipe: String,
         name: String,

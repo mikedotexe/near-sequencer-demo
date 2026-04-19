@@ -1,8 +1,21 @@
 # Mainnet readiness
 
+**What this runbook buys you.** A clean mainnet capture of the four
+recipes produces `artifacts/mainnet/` — the strongest empirical
+evidence for the repo's central claim that the `recipes` contract
+achieves *contract-controlled sequential receipt execution across
+block boundaries* (see [`../README.md`](../README.md)). Testnet
+suffices to prove the mechanic works; mainnet proves it works under
+real validator load and real cross-shard receipt forwarding. Both
+captures together yield the side-by-side grid in
+[`../artifacts/comparative.md`](../artifacts/comparative.md), and
+both can be independently re-verified following
+[`verification.md`](verification.md).
+
 This runbook walks through deploying the recipe book on NEAR mainnet
 — the stronger empirical evidence context. The four invariants
-(`DAG-placement`, `Budget`, `Atomicity`, `Shard-placement`) are
+(`DAG-placement`, `Budget`, `Atomicity`, `Shard-placement`;
+derivations in [`invariants.md`](invariants.md)) are
 protocol-correctness claims, so they should hold on any NEAR network;
 mainnet gives them a second data point under real validator load and
 real cross-shard receipt forwarding.

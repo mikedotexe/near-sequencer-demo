@@ -1,6 +1,25 @@
-// Per-recipe run aggregation. Each recipe summarizes its runs' lifecycle
-// metrics (block deltas, resolved-ok rate, observed counter-value range)
-// and writes `artifacts/<network>/recipe-<name>/summary.json`.
+// Per-recipe run aggregation + invariant roll-ups.
+//
+// Each recipe summarizes its runs' lifecycle metrics (block deltas,
+// resolved-ok rate, observed counter-value range) and writes
+// `artifacts/<network>/recipe-<name>/summary.json`. This module is
+// also where the four per-run invariant results from audit.ts roll
+// up into per-recipe totals that the report and comparative layers
+// consume:
+//
+//   computeDagInvariant       → DagInvariantSummary
+//     (DAG-placement: callback trace events land in yield tx's DAG)
+//   computeBudgetInvariant    → BudgetInvariantSummary
+//     (Budget: observed yield→callback block delta ∈ [200, 205])
+//   computeAtomicityInvariant → AtomicityInvariantSummary
+//     (Atomicity: Recipe 4 Transfer lands on yield-time recipient)
+//   computeShardInvariant     → ShardInvariantSummary
+//     (Shard-placement: callback executors == contract home shard)
+//
+// Each summary carries `held: boolean` plus the evidence counts used
+// by report.md's "Invariants at a glance" header and comparative.md's
+// 4×2 grid. See docs/invariants.md for the substantive claim each
+// invariant proves about the sequencing primitive.
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

@@ -4,13 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A compact, visual recipe book for NEAR's NEP-519 yield/resume primitive.
-Two contracts (`recipes` + canonical `counter`) plus one non-contract
-participant (`bob` for Recipe 4), four recipe method groups (basic /
-timeout / chained / handoff), a scripts pipeline that broadcasts them
-and snapshots receipt DAGs, and Manim scenes per recipe. Verified on
-testnet; mainnet support is first-class — see `docs/mainnet-readiness.md`
-for the bootstrap runbook. Not a thesis demo.
+A compact, visual recipe book demonstrating **contract-controlled
+sequential receipt execution across block boundaries** on NEAR, via
+[NEP-519](https://github.com/near/NEPs/blob/master/neps/nep-0519.md)
+yield/resume. The novelty: `Promise::new_yield` lets a contract pause
+itself mid-flow and wait for a signal across block boundaries, then
+resume deterministically — a capability that plain `Promise.then()`
+chains (where the runtime drives the continuation the moment a
+downstream receipt resolves) and synchronous batching (the
+`intents.near`-style "all work in one tx" pattern; see
+`docs/intents-near.md` for the architectural contrast) cannot express.
+
+Shape: two contracts (`recipes` + canonical `counter`) plus one
+non-contract participant (`bob` for Recipe 4); four recipe method
+groups (basic / timeout / chained / handoff); a scripts pipeline that
+broadcasts them and snapshots full receipt DAGs; four machine-checked
+invariants (`docs/invariants.md`) as the on-chain proof surface; Manim
+scenes per recipe.
+
+Empirical status: all four invariants PASS identically on testnet
+*and* mainnet — committed bytes-on-chain evidence, not just support.
+Side-by-side grid in `artifacts/comparative.md`; independent-
+verification paths (explorer eyeball / offline re-audit / archival
+re-fetch) in `docs/verification.md`. Mainnet bootstrap runbook in
+`docs/mainnet-readiness.md`. Not a thesis demo.
 
 If you catch yourself writing about "silent value," "dishonest router,"
 "truthful resolution surface," or "three-flow proof matrix," stop —
